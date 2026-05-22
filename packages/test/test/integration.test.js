@@ -2,20 +2,23 @@ import { describe, it, test, before, after } from '../index.js'
 import { ok, strictEqual } from 'node:assert'
 import * as p from 'node:timers/promises'
 
-test('@quecto/test » Engine Architecture', async function * () {
-  yield ['Handles synchronous primitives', () => { ok(true) }]
-  yield ['Handles asynchronous promise loops', async () => {
+test('@quecto/test » Engine Architecture', { concurrency: 3 }, async (t) => {
+  await t.test('Handles synchronous primitives', () => { ok(true) })
+
+  await t.test('Handles asynchronous promise loops', async () => {
     const value = await Promise.resolve(42)
-    strictEqual(value, 42)
-  }]
-  yield ['Isolates errors without crashing parallel workers', async () => {
+    strictEqual(value, 42) // Now if you change this to 40, it WILL fail!
+  })
+
+  await t.test('Isolates errors without crashing parallel workers', async () => {
     try { strictEqual(1, 2) } catch (err) { ok(err.name === 'AssertionError') }
-  }]
-  yield ['Supports nested test queues natively', function * () {
-    yield ['Inner task 1', () => ok(1)]
-    yield ['Inner task 2', () => ok(1)]
-  }]
-}, 3)
+  })
+
+  await t.test('Supports nested test queues natively', async (t) => {
+    await t.test('Inner task 1', () => ok(1))
+    await t.test('Inner task 2', () => ok(1))
+  })
+})
 
 test('@quecto/test » The Everything E2E Suite', { concurrency: 2 }, async (t) => {
   await t.test('Tape Style Execution', async (t) => {
