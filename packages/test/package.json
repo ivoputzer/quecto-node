@@ -1,4 +1,7 @@
 {
+  "name": "@quecto/test",
+  "description": "Hyper-minimalist, zero-dependency concurrent test runner.",
+  "version": "0.0.0",
   "type": "module",
   "private": true,
   "scripts": {
