@@ -4,11 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "bin": "bin/quecto.js",
+  "bin": {
+    "q-test": "bin/q-test.js",
+    "q.test": "bin/q-test.js"
+  },
   "scripts": {
-    "bin": "bin/quecto.js",
     "test": "node --test",
-    "quecto": "bin/quecto.js --register"
+    "quecto": "node bin/q-test.js --register"
   },
   "exports": {
     ".": "./index.js",
