@@ -1,32 +1,38 @@
 #!/usr/bin/env node
+
 import { readFileSync } from 'node:fs'
-import { exit } from 'node:process'
+import { styleText } from 'node:util'
+import { argv, exit, stdout, stderr } from 'node:process'
+import { mapOptions, defaultOptions, runSuite } from '../cli.js'
 
-import { parseCLI, runSuite } from './cli.js'
-
-const args = process.argv.slice(2)
-
-if (args.includes('--help') || args.includes('-h')) {
-  console.log(`
+if (argv.includes('--help') || argv.includes('-h')) {
+  stdout.write(`
   Usage:
-    quecto [targets...] [options]
+    q-test [targets...] [options]
+
+  Aliases:
+    npx @quecto/test [targets...] [options]
 
   Options:
-    -p, --parallel <cores>  Number of parallel workers (default: CPU cores)
-    -m, --match <pattern>   RegExp pattern to filter test files (default: /\.test\.js$/)
-    -r, --register          Enable drop-in replacement for node:test (degrades performance slightly)
+    -p, --parallel <cores>  Number of parallel workers (default: os.availableParallelism)
+    -m, --match <pattern>   RegExp pattern to filter test files (default: ${defaultOptions.match})
+    -i, --ignore <pattern>  RegExp pattern to ignore directories (default: ${defaultOptions.ignore})
+    -r, --register          Enable drop-in replacement for node:test (default: false)
     -v, --version           Print version and exit
     -h, --help              Print this help menu and exit
-  `)
+  \n`)
   exit(0)
 }
 
-if (args.includes('--version') || args.includes('-v')) {
-  const pkgPath = new URL('../package.json', import.meta.url)
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-  console.log(`v${pkg.version}`)
+if (argv.includes('--version') || argv.includes('-v')) {
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  stdout.write(`v${version}\n`)
   exit(0)
 }
 
-// the execution entrypoint. 0 logic, 100% DI orchestrator
-runSuite(parseCLI(args))
+try {
+  runSuite(mapOptions(argv.slice(2)))
+} catch (error) {
+  stderr.write(styleText(['red', 'bold'], `\n✘ Configuration Error: ${error.message}\n\n`))
+  exit(1)
+}

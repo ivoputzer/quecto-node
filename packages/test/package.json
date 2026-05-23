@@ -5,11 +5,11 @@
   "type": "module",
   "private": true,
   "bin": {
-    "q-test": "bin/q-test.js",
-    "q.test": "bin/q-test.js"
+    "q-test": "bin/q-test.js"
   },
   "scripts": {
     "test": "node --test",
+    "lint": "eslint",
     "quecto": "node bin/q-test.js --register"
   },
   "exports": {

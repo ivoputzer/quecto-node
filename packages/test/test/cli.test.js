@@ -1,84 +1,137 @@
 import { describe, it } from 'node:test'
-import { findFiles, runFile, parseCLI, runSuite } from '../bin/cli.js'
 import { deepStrictEqual, strictEqual, rejects, ok } from 'node:assert'
 
+import { mapOptions, exitCode, runFile, runSuite } from '../cli.js'
+
 describe('@quecto/test/cli', () => {
-  it('.parseCLI() Maps arguments elegantly to execution config', () => {
-    const mockOS = { parallelism: () => 4 }
+  describe('.mapOptions(args)', () => {
+    const mockOS = { availableParallelism: () => 4 }
+    const mockProcess = { cwd: () => '/current/working/directory' }
 
-    const defaults = parseCLI([], mockOS)
-    deepStrictEqual(defaults.targets, ['test'])
-    strictEqual(defaults.concurrency, 4)
-    strictEqual(defaults.register, false)
-    ok(defaults.filter.test('my.test.js'))
+    it('maps defaults to execution config', () => {
+      const { targets, parallel, match, ignore, register } = mapOptions([], mockOS, mockProcess)
 
-    const explicit = parseCLI(['src', 'lib', '-p', '8', '-m', 'spec\\.js$', '-r'], mockOS)
-    deepStrictEqual(explicit.targets, ['src', 'lib'])
-    strictEqual(explicit.concurrency, 8)
-    strictEqual(explicit.register, true)
-    ok(explicit.filter.test('my.spec.js'))
+      strictEqual(parallel, mockOS.availableParallelism())
+      deepStrictEqual(targets, [mockProcess.cwd()])
+      strictEqual(register, false)
+      ok(match.test('my.test.js'))
+      ok(ignore.test('node_modules'))
+    })
+
+    it('maps arguments to execution config', () => {
+      const { targets, parallel, match, ignore, register } = mapOptions(['src', 'lib', '--parallel', '8', '--match', 'spec\\.js$', '--ignore', 'custom-regex', '--register'], mockOS, mockProcess)
+
+      deepStrictEqual(targets, ['src', 'lib'])
+      strictEqual(parallel, 8)
+      strictEqual(register, true)
+      ok(match.test('my.spec.js'))
+      ok(ignore.test('custom-regex'))
+    })
+
+    it('maps short arguments to execution config', () => {
+      const { targets, parallel, match, ignore, register } = mapOptions(['sources', '-p', '8', '-m', 'stories\\.js$', '-i', 'custom-regex', '-r'], mockOS, mockProcess)
+
+      deepStrictEqual(targets, ['sources'])
+      strictEqual(parallel, 8)
+      strictEqual(register, true)
+      ok(match.test('my.stories.js'))
+      ok(ignore.test('custom-regex'))
+    })
   })
 
-  it('.findFiles() Yields explicit file directly without traversing', () => {
-    const mockFs = { statSync: () => ({ isFile: () => true }) }
-    const results = [...findFiles(['file1.js', 'file2.js'], /\.test\.js$/, mockFs, {})]
-    deepStrictEqual(results, ['file1.js', 'file2.js'])
+  describe('.runFile(path)', () => {
+    it('resolves process and injects loader via --register flag', async () => {
+      const mockCpSuccess = {
+        spawn: (cmd, args) => ({
+          once: (event, fn) => {
+            strictEqual(event, 'close')
+            deepStrictEqual(args, ['--import', '@quecto/test/register', 'test_file.js'])
+            fn(0)
+          }
+        })
+      }
+      console.log('test')
+      await runFile('test_file.js', { register: true }, mockCpSuccess, { execPath: 'node', execArgv: [] })
+    })
+
+    it('respects parent process.execArgv inherently', async () => {
+      const mockCpSuccess = {
+        spawn: (cmd, args) => ({
+          once: (event, fn) => {
+            deepStrictEqual(args, ['--no-warnings', 'clean_file.js'])
+            fn(0)
+          }
+        })
+      }
+      await runFile('clean_file.js', { register: false }, mockCpSuccess, { execPath: 'node', execArgv: ['--no-warnings'] })
+    })
+
+    it('rejects cleanly on process exit code > 0', async () => {
+      const mockCpFail = { spawn: () => ({ once: (event, fn) => fn(1) }) }
+      await rejects(runFile('broken.js', {}, mockCpFail, { execPath: 'node', execArgv: [] }), (err) => err === 'broken.js')
+    })
+
+    it('rejects instantly if the spawn engine throws a system error (e.g., ENOENT)', async () => {
+      const mockCpError = {
+        spawn () {
+          throw new Error('spawn ENOENT') // Simulate Node.js throwing an error on the call stack immediately
+        }
+      }
+
+      await rejects(
+        runFile('non-existent-file.test.js', {}, mockCpError, { execPath: 'node', execArgv: [] }),
+        (err) => err.message === 'spawn ENOENT',
+        'Should forward systemic lifecycle errors straight up to the suite coordinator'
+      )
+    })
+
+    it('generates a clean argument sequence when multiple parent flags exist', async () => {
+      let capturedArgs = []
+      const mockCpSuccess = {
+        spawn: (cmd, args) => {
+          capturedArgs = args
+          return { once: (event, fn) => fn(0) }
+        }
+      }
+
+      const parentFlags = ['--experimental-vm-modules', '--no-warnings']
+      await runFile('target.test.js', { register: true }, mockCpSuccess, { execPath: 'node', execArgv: parentFlags })
+
+      deepStrictEqual(
+        capturedArgs,
+        ['--experimental-vm-modules', '--no-warnings', '--import', '@quecto/test/register', 'target.test.js'],
+        'Should array-spread all execution parameters into a single, perfectly indexed list'
+      )
+    })
   })
 
-  it('.findFiles() Recursively traverses and filters directories', () => {
-    const mockFs = {
-      statSync: () => ({ isFile: () => false }),
-      readdirSync: (base) => {
-        if (base === 'project') return [{ name: 'a.test.js', isDirectory: () => false }]
-        return []
+  describe('.runSuite(options)', () => {
+    const mockProc = { stdout: { write: Function.prototype }, stderr: { write: Function.prototype } }
+    const mockLibFs = {
+      * findFiles () {
+        yield 'a.js'
+        yield 'b.js'
       }
     }
-    const mockPath = { join: (a, b) => `${a}/${b}` }
-    const results = [...findFiles(['project'], /\.test\.js$/, mockFs, mockPath)]
-    deepStrictEqual(results, ['project/a.test.js'])
-  })
-
-  it('.runFile() Resolves process and injects loader via --register flag', async () => {
-    const mockCpSuccess = {
-      spawn: (cmd, args) => ({
-        on: (event, fn) => {
-          strictEqual(event, 'close')
-          deepStrictEqual(args, ['--import', '@quecto/test/register', 'test_file.js'])
-          fn(0)
+    it('coordinates multi-core virtual execution perfectly', async () => {
+      const options = { targets: ['virt'], parallel: 2, match: /.*/, register: false }
+      let filesRun = 0
+      const mockCli = {
+        exitCode: Function.prototype,
+        async runFile () {
+          filesRun++
         }
-      })
-    }
-    await runFile('test_file.js', { register: true }, mockCpSuccess, { execPath: 'node', execArgv: [] })
+      }
+      await runSuite(options, mockLibFs, mockCli, mockProc)
+      strictEqual(filesRun, 2, 'Engine dropped tests in queue')
+    })
   })
 
-  it('.runFile() Respects parent process.execArgv inherently', async () => {
-    const mockCpSuccess = {
-      spawn: (cmd, args) => ({
-        on: (event, fn) => {
-          deepStrictEqual(args, ['--no-warnings', 'clean_file.js'])
-          fn(0)
-        }
-      })
-    }
-    await runFile('clean_file.js', { register: false }, mockCpSuccess, { execPath: 'node', execArgv: ['--no-warnings'] })
-  })
-
-  it('.runFile() Rejects cleanly on process exit code > 0', async () => {
-    const mockCpFail = { spawn: () => ({ on: (event, fn) => fn(1) }) }
-    await rejects(runFile('broken.js', {}, mockCpFail, { execPath: 'node', execArgv: [] }), (err) => err === 'broken.js')
-  })
-
-  it('.runSuite() Coordinates multi-core virtual execution perfectly', async () => {
-    let filesRun = 0
-    function * mockFind () { yield 'a.js'; yield 'b.js' }
-    const mockRun = async () => { filesRun++ }
-    const mockProc = { set exitCode (v) {} }
-
-    await runSuite(
-      { targets: ['virt'], concurrency: 2, filter: /.*/, register: false },
-      { _find: mockFind, _run: mockRun, _log: () => {}, _err: () => {}, _proc: mockProc }
-    )
-
-    strictEqual(filesRun, 2, 'Engine dropped tests in queue')
+  describe('.exitCode(code)', () => {
+    it('sets the exitCode of the current process', () => {
+      const process = { exitCode: 0 }
+      exitCode(1, process)
+      strictEqual(process.exitCode, 1)
+    })
   })
 })
