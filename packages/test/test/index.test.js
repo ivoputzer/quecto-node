@@ -78,7 +78,7 @@ suite('@quecto/test » Public API Integration', () => {
     })
   })
 
-  nodeTest('PROVES TRUE DECORATOR: Tape style t.test() hook inheritance', async () => {
+  nodeTest('Tape style t.test() hook inheritance', async () => {
     const runOrder = []
     await silentRun(async ({ describe, it, beforeEach }) => {
       await describe('Tape Parent', () => {
@@ -94,7 +94,7 @@ suite('@quecto/test » Public API Integration', () => {
     deepStrictEqual(runOrder, ['before_each', 'leaf', 'before_each', 'child'])
   })
 
-  nodeTest.skip('PROVES CURRENT BRITTLE: Async BDD Suite Evaluation', async () => {
+  nodeTest('Async BDD Suite Evaluation', async () => {
     const runOrder = []
     await silentRun(async ({ describe, it, beforeEach }) => {
       await describe('Async Suite', async () => {

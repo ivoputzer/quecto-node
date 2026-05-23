@@ -74,19 +74,13 @@ export function createRunner (proc = process) {
       task.isSuite = isSuite
 
       if (isSuite) {
-        task.fn = null // Suites act as namespaces in Matrix execution
+        task.setup = fn // The Matrix will natively await the Suite AST Builder!
+        task.fn = null
       } else {
-        decorate(task) // Leaf nodes get wrapped in dynamic hook runners
+        decorate(task)
       }
 
       parent.children.push(task)
-
-      // Phase 1: Suites evaluate synchronously to build the tree immediately
-      if (isSuite && fn) {
-        ctx.run(task, () => {
-          try { fn() } catch (err) { task.error = err }
-        })
-      }
 
       return parent === rootTask ? scheduleRoot() : Promise.resolve()
     }

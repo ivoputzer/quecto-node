@@ -26,6 +26,7 @@ export const evaluate = (fn, context, timeout, abortController, { setTimeout, cl
 
 export const createTask = (name, optsOrFn, maybeFn) => ({
   name,
+  setup: null, // Hook for AST generation inside the Matrix
   fn: typeof optsOrFn === 'function' ? optsOrFn : maybeFn,
   opts: typeof optsOrFn === 'object' ? optsOrFn : {},
   children: [],
@@ -64,10 +65,13 @@ export async function run (task, ctx) {
   try {
     if (task.opts.skip) throw new Error('ERR_SKIPPED')
 
+    // Phase 1: Native inside-the-matrix Suite AST generation
+    if (task.setup) await ctx.run(task, () => evaluate(task.setup, context, task.opts.timeout, ac))
+
     for (const hook of task.before) await evaluate(hook, context, task.opts.timeout, ac)
 
-    // Evaluates test assertions. (For suites, task.fn is null, so this bypasses cleanly)
-    await ctx.run(task, () => evaluate(task.fn, context, task.opts.timeout, ac))
+    // Evaluates test assertions.
+    if (task.fn) await ctx.run(task, () => evaluate(task.fn, context, task.opts.timeout, ac))
 
     const exclusive = task.children.filter(c => c.opts.only)
     if (exclusive.length) task.children.forEach(c => { if (!c.opts.only) c.skipped = true })
