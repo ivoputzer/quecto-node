@@ -10,7 +10,7 @@
   "scripts": {
     "test": "node --test test/**.test.js",
     "lint": "eslint",
-    "quecto": "node bin/q-test.js --register"
+    "quecto": "node bin/q-test.js --register test/**.test.js"
   },
   "exports": {
     ".": "./index.js",

@@ -1,73 +1,58 @@
 import { describe as suite, it as nodeTest } from 'node:test'
 import { strictEqual, deepStrictEqual, ok } from 'node:assert'
 
-import { test, describe, it, before, after, beforeEach, afterEach } from '../index.js'
+import { createRunner, ctx } from '../index.js'
 
 const silentRun = async (fn) => {
-  const { stdout, stderr, exitCode, env } = process
-  const writeOut = stdout.write
-  const writeErr = stderr.write
-  const prevExit = exitCode
-  const prevEnvCode = env.QUECTO_TEST_EXIT_CODE
-
-  stdout.write = () => {}
-  stderr.write = () => {}
-  process.exitCode = 0
-  delete env.QUECTO_TEST_EXIT_CODE
-
-  try {
-    return await fn()
-  } finally {
-    stdout.write = writeOut
-    stderr.write = writeErr
-    process.exitCode = prevExit
-    env.QUECTO_TEST_EXIT_CODE = prevEnvCode
+  const fakeProc = {
+    stdout: { write: () => {} },
+    stderr: { write: () => {} },
+    env: {},
+    exitCode: 0
   }
+
+  const runner = createRunner(fakeProc)
+
+  // Nullifying the context severs the connection to the outer test runner
+  return await ctx.run(null, () => fn(runner))
 }
 
-/*
-
-THIS TEST SUITE IS SKIPPED BECAUSE AS OF RIGHT NOW WE'VE INTRODUCED THE ROOT NODE THAT FIXES TOP LEVEL
-.before .after .beforeEach and .afterEach
-CALLS BUT INTRODUCES GLOBAL STATE/SINGLETON 🙈
-
-*/
-
-suite.skip('@quecto/test » Public API Integration', () => {
+suite('@quecto/test » Public API Integration', () => {
   nodeTest('Constructs and executes root AST node natively', async () => {
-    await silentRun(async () => {
+    await silentRun(async ({ test }) => {
       const result = await test('Root', () => { ok(true) })
-      strictEqual(result.name, 'Root')
-      strictEqual(result.children.length, 0)
-      strictEqual(result.error, undefined)
+      strictEqual(result.name, 'QUECTO_ROOT_NODE')
+      strictEqual(result.children[0].name, 'Root')
+      strictEqual(result.children[0].error, undefined)
     })
   })
 
   nodeTest('Nests children invisibly via AsyncLocalStorage context', async () => {
-    await silentRun(async () => {
+    await silentRun(async ({ test }) => {
       const result = await test('Parent', async () => {
         await test('Child 1', () => ok(true))
         await test('Child 2', () => ok(true))
       })
-      strictEqual(result.name, 'Parent')
-      strictEqual(result.children.length, 2)
-      strictEqual(result.children[0].name, 'Child 1')
-      strictEqual(result.children[1].name, 'Child 2')
+      const parent = result.children[0]
+      strictEqual(parent.name, 'Parent')
+      strictEqual(parent.children.length, 2)
+      strictEqual(parent.children[0].name, 'Child 1')
+      strictEqual(parent.children[1].name, 'Child 2')
     })
   })
 
   nodeTest('Intercepts console logs and attaches them to the active node', async () => {
-    await silentRun(async () => {
+    await silentRun(async ({ test }) => {
       const result = await test('Logger', () => {
         console.log('Line 1')
         console.log('Line 2')
       })
-      deepStrictEqual(result.logs, ['Line 1', 'Line 2'])
+      deepStrictEqual(result.children[0].logs, ['Line 1', 'Line 2'])
     })
   })
 
   nodeTest('Propagates nested beforeEach and afterEach cleanly through BDD execution map', async () => {
-    await silentRun(async () => {
+    await silentRun(async ({ describe, it, before, after, beforeEach, afterEach }) => {
       const runOrder = []
 
       await describe('BDD Mapper', () => {
@@ -91,5 +76,37 @@ suite.skip('@quecto/test » Public API Integration', () => {
         'suite_after'
       ])
     })
+  })
+
+  nodeTest('PROVES TRUE DECORATOR: Tape style t.test() hook inheritance', async () => {
+    const runOrder = []
+    await silentRun(async ({ describe, it, beforeEach }) => {
+      await describe('Tape Parent', () => {
+        beforeEach(() => runOrder.push('before_each'))
+
+        it('Leaf Wrapper', async (t) => {
+          runOrder.push('leaf')
+          await t.test('Tape Child', () => runOrder.push('child'))
+        })
+      })
+    })
+
+    deepStrictEqual(runOrder, ['before_each', 'leaf', 'before_each', 'child'])
+  })
+
+  nodeTest.skip('PROVES CURRENT BRITTLE: Async BDD Suite Evaluation', async () => {
+    const runOrder = []
+    await silentRun(async ({ describe, it, beforeEach }) => {
+      await describe('Async Suite', async () => {
+        beforeEach(() => runOrder.push('before_each'))
+        // Simulate async latency (e.g. database/network call)
+        await new Promise(resolve => setTimeout(resolve, 50))
+        it('Async Test', () => runOrder.push('test'))
+      })
+    })
+
+    // FAIL EXPECTATION: Under current code, runOrder will be empty []
+    // because the scheduler drained before the timeout finished!
+    deepStrictEqual(runOrder, ['before_each', 'test'])
   })
 })

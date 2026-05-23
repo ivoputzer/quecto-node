@@ -47,6 +47,7 @@ export async function run (task, ctx) {
     test: (...args) => {
       const child = createTask(...args)
       child.parent = task
+      if (ctx.onTask) ctx.onTask(child)
       task.children.push(child)
       return Promise.resolve()
     },
@@ -54,6 +55,7 @@ export async function run (task, ctx) {
       const child = createTask(...args)
       child.parent = task
       child.opts.skip = true
+      if (ctx.onTask) ctx.onTask(child)
       task.children.push(child)
       return Promise.resolve()
     }

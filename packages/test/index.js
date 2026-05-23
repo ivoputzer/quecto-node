@@ -1,8 +1,8 @@
 import { format } from 'node:util'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { createTask, resolveOptions, run, report } from './lib/test.js'
+import { createTask, resolveOptions, evaluate, run, report } from './lib/test.js'
 
-const ctx = new AsyncLocalStorage()
+export const ctx = new AsyncLocalStorage()
 const originalLog = console.log
 
 console.log = (...args) => {
@@ -11,79 +11,116 @@ console.log = (...args) => {
   else originalLog(...args)
 }
 
-// The Implicit File-Level Root Task
-const rootTask = createTask('QUECTO_ROOT_NODE')
-let rootPromise = null
+export function createRunner (proc = process) {
+  const rootTask = createTask('QUECTO_ROOT_NODE')
+  let rootPromise = null
 
-function scheduleRoot () {
-  if (!rootPromise) {
-    rootPromise = new Promise(resolve => {
-      // Drain the entire AST on the next tick, after the file finishes synchronous evaluation
-      setImmediate(() => {
-        run(rootTask, ctx).then(result => {
-          report(result)
-          if (process.env.QUECTO_TEST_EXIT_CODE) process.exitCode = 1
-          resolve(result)
-        })
-      })
-    })
-  }
-  return rootPromise
-}
+  function decorate (task) {
+    const fn = task.fn
+    if (!fn || task.isSuite) return
 
-function createInterface (isSuite) {
-  const api = (...args) => {
-    const fn = typeof args[1] === 'function' ? args[1] : args[2]
-    const task = createTask(...args)
-    const parent = ctx.getStore() || rootTask
-
-    task.parent = parent
-
-    // Phase 1: Leaf nodes statically inherit hooks from ancestors during AST construction
-    if (!isSuite) {
-      let curr = parent
+    task.fn = async (context, finalize) => {
+      let curr = task.parent
       const befores = []; const afters = []
+
+      // Dynamic Runtime Hook Pulling
       while (curr) {
-        if (curr.bddBefore) befores.unshift(...curr.bddBefore)
-        if (curr.bddAfter) afters.push(...curr.bddAfter)
+        if (curr.bddBefore) befores.unshift(...curr.bddBefore) // Outer first
+        if (curr.bddAfter) afters.push(...curr.bddAfter)       // Inner first
         curr = curr.parent
       }
-      task.before.push(...befores)
-      task.after.push(...afters)
-    } else {
-      task.fn = null // Suites do not execute inside the Matrix
-    }
 
-    parent.children.push(task)
+      for (const hook of befores) await evaluate(hook, context)
 
-    // Phase 1: Suites evaluate synchronously to build the tree immediately
-    if (isSuite && fn) {
-      ctx.run(task, () => {
-        try { fn() } catch (err) { task.error = err }
+      await new Promise((resolve, reject) => {
+        const done = (err) => err ? reject(err) : resolve()
+        try {
+          const result = fn(context, done)
+          if (result?.then) result.then(() => resolve(), reject)
+          else if (fn.length < 2) resolve()
+        } catch (err) { reject(err) }
       })
-    }
 
-    return parent === rootTask ? scheduleRoot() : Promise.resolve()
+      for (const hook of afters) await evaluate(hook, context)
+    }
   }
 
-  api.skip = (name, opts, fn) => api(name, resolveOptions(opts, { skip: true }), fn || opts)
-  api.only = (name, opts, fn) => api(name, resolveOptions(opts, { only: true }), fn || opts)
-  return api
+  function scheduleRoot () {
+    if (!rootPromise) {
+      rootPromise = new Promise(resolve => {
+        setImmediate(() => {
+          const matrixCtx = {
+            run: (store, cb) => ctx.run(store, cb),
+            onTask: decorate
+          }
+          run(rootTask, matrixCtx).then(result => {
+            report(result, '', proc)
+            if (proc.env.QUECTO_TEST_EXIT_CODE) proc.exitCode = 1
+            resolve(result)
+          })
+        })
+      })
+    }
+    return rootPromise
+  }
+
+  function createInterface (isSuite) {
+    const api = (...args) => {
+      const fn = typeof args[1] === 'function' ? args[1] : args[2]
+      const task = createTask(...args)
+      const parent = ctx.getStore() || rootTask
+
+      task.parent = parent
+      task.isSuite = isSuite
+
+      if (isSuite) {
+        task.fn = null // Suites act as namespaces in Matrix execution
+      } else {
+        decorate(task) // Leaf nodes get wrapped in dynamic hook runners
+      }
+
+      parent.children.push(task)
+
+      // Phase 1: Suites evaluate synchronously to build the tree immediately
+      if (isSuite && fn) {
+        ctx.run(task, () => {
+          try { fn() } catch (err) { task.error = err }
+        })
+      }
+
+      return parent === rootTask ? scheduleRoot() : Promise.resolve()
+    }
+
+    api.skip = (name, opts, fn) => api(name, resolveOptions(opts, { skip: true }), fn || opts)
+    api.only = (name, opts, fn) => api(name, resolveOptions(opts, { only: true }), fn || opts)
+    return api
+  }
+
+  return {
+    test: createInterface(false),
+    describe: createInterface(true),
+    it: createInterface(false),
+    before: (fn) => (ctx.getStore() || rootTask).before.push(fn),
+    after: (fn) => (ctx.getStore() || rootTask).after.push(fn),
+    beforeEach: (fn) => {
+      const node = ctx.getStore() || rootTask
+      node.bddBefore = node.bddBefore || []
+      node.bddBefore.push(fn)
+    },
+    afterEach: (fn) => {
+      const node = ctx.getStore() || rootTask
+      node.bddAfter = node.bddAfter || []
+      node.bddAfter.push(fn)
+    }
+  }
 }
 
-export const describe = createInterface(true)
-export const it = createInterface(false)
-export const test = createInterface(false)
+const defaultRunner = createRunner()
 
-export const before = (fn) => (ctx.getStore() || rootTask).before.push(fn)
-export const after = (fn) => (ctx.getStore() || rootTask).after.push(fn)
-export const beforeEach = (fn) => {
-  const node = ctx.getStore() || rootTask
-  node.bddBefore = node.bddBefore || []
-  node.bddBefore.push(fn)
-}
-export const afterEach = (fn) => {
-  const node = ctx.getStore() || rootTask
-  node.bddAfter = node.bddAfter || []
-  node.bddAfter.push(fn)
-}
+export const test = defaultRunner.test
+export const describe = defaultRunner.describe
+export const it = defaultRunner.it
+export const before = defaultRunner.before
+export const after = defaultRunner.after
+export const beforeEach = defaultRunner.beforeEach
+export const afterEach = defaultRunner.afterEach
