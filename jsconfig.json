@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
     "maxNodeModuleJsDepth": 1,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "module": "node16",
+    "moduleResolution": "node16"
   }
 }
