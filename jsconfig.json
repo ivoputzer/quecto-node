@@ -1,0 +1,6 @@
+{
+  "compilerOptions": {
+    "maxNodeModuleJsDepth": 1,
+    "skipLibCheck": true
+  }
+}

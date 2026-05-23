@@ -1,0 +1,16 @@
+{
+  "name": "quecto-node",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "eslint": "^9.39.4",
+    "neostandard": "^0.13.0"
+  }
+}
