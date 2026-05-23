@@ -1,7 +1,5 @@
-// todo: consider refactoring this into lib/test.js <- it is our test library
 import { styleText } from 'node:util'
 
-// Normalizes sync/async/callback signatures into a pure promise, using modern V8 primitives
 export const evaluate = (fn, context, timeout, abortController, { setTimeout, clearTimeout } = globalThis) =>
   new Promise((resolve, reject) => {
     let timer
@@ -9,6 +7,7 @@ export const evaluate = (fn, context, timeout, abortController, { setTimeout, cl
       if (timer) clearTimeout(timer)
       err ? reject(err) : resolve()
     }
+
     if (timeout) {
       timer = setTimeout(() => {
         const err = new Error(`Timeout: ${timeout}ms exceeded`)
@@ -16,6 +15,7 @@ export const evaluate = (fn, context, timeout, abortController, { setTimeout, cl
         finalize(err)
       }, timeout)
     }
+
     try {
       if (!fn) return finalize()
       const result = fn(context, finalize)
@@ -37,36 +37,51 @@ export const createTask = (name, optsOrFn, maybeFn) => ({
 export const resolveOptions = (optsOrFn, overrides) =>
   typeof optsOrFn === 'function' ? overrides : { ...optsOrFn, ...overrides }
 
-// The highly recursive, pull-based V8 micro-task matrix
+// The pure, recursive, pull-based V8 micro-task
 export async function run (task, ctx) {
   const start = Date.now()
-  const abortController = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const ac = typeof AbortController !== 'undefined' ? new AbortController() : null
 
   const context = {
-    signal: abortController?.signal,
-    test: (...args) => { task.children.push(createTask(...args)); return Promise.resolve() },
-    skip: (...args) => { const child = createTask(...args); child.opts.skip = true; task.children.push(child); return Promise.resolve() }
+    signal: ac?.signal,
+    test: (...args) => {
+      const child = createTask(...args)
+      child.parent = task
+      task.children.push(child)
+      return Promise.resolve()
+    },
+    skip: (...args) => {
+      const child = createTask(...args)
+      child.parent = task
+      child.opts.skip = true
+      task.children.push(child)
+      return Promise.resolve()
+    }
   }
 
   try {
     if (task.opts.skip) throw new Error('ERR_SKIPPED')
-    await ctx.run(task, () => evaluate(task.fn, context, task.opts.timeout, abortController))
-    for (const hook of task.before) await evaluate(hook, context, task.opts.timeout, abortController)
+
+    for (const hook of task.before) await evaluate(hook, context, task.opts.timeout, ac)
+
+    // Evaluates test assertions. (For suites, task.fn is null, so this bypasses cleanly)
+    await ctx.run(task, () => evaluate(task.fn, context, task.opts.timeout, ac))
 
     const exclusive = task.children.filter(c => c.opts.only)
     if (exclusive.length) task.children.forEach(c => { if (!c.opts.only) c.skipped = true })
     const runnable = task.children.filter(c => !c.skipped)
 
     if (runnable.length > 0) {
-      const iterator = runnable.entries()
       const poolSize = task.opts.concurrency === true ? 4 : (task.opts.concurrency || 1)
+      const iterator = runnable.entries()
       await Promise.all(Array.from({ length: poolSize }, async () => {
         for (let step = iterator.next(); !step.done; step = iterator.next()) {
           await run(step.value[1], ctx)
         }
       }))
     }
-    for (const hook of task.after) await evaluate(hook, context, task.opts.timeout, abortController)
+
+    for (const hook of task.after) await evaluate(hook, context, task.opts.timeout, ac)
   } catch (error) {
     if (error.message === 'ERR_SKIPPED') task.skipped = true
     else task.error = error
@@ -76,7 +91,6 @@ export async function run (task, ctx) {
   return task
 }
 
-// Dependency-injected atomic output formatter
 export function report (task, indent = '', { stdout, stderr, env } = process) {
   const pkgName = env.npm_package_name
   if (task.error) {
@@ -88,10 +102,14 @@ export function report (task, indent = '', { stdout, stderr, env } = process) {
   } else if (task.skipped) {
     stdout.write(styleText('gray', `${indent}- ${task.name} (skipped)\n`))
   } else {
-    const symbol = task.children.length ? '▶' : '✔'
-    const color = task.children.length ? 'blue' : 'green'
-    stdout.write(styleText(color, `${indent}${symbol} ${task.name} (${task.duration}ms)\n`))
+    // Root Node is invisible. Only render its children.
+    if (task.name !== 'QUECTO_ROOT_NODE') {
+      const symbol = task.children.length ? '▶' : '✔'
+      const color = task.children.length ? 'blue' : 'green'
+      stdout.write(styleText(color, `${indent}${symbol} ${task.name} (${task.duration}ms)\n`))
+      indent += '  '
+    }
   }
-  task.logs.forEach(log => stdout.write(styleText('gray', `${indent}  | ${log.replace(/\n/g, `\n${indent}  | `)}\n`)))
-  task.children.forEach(child => report(child, indent + '  ', { stdout, stderr, env }))
+  task.logs.forEach(log => stdout.write(styleText('gray', `${indent}| ${log.replace(/\n/g, `\n${indent}| `)}\n`)))
+  task.children.forEach(child => report(child, indent, { stdout, stderr, env }))
 }

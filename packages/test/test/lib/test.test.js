@@ -80,7 +80,7 @@ describe('@quecto/test/lib/test', () => {
   describe('.run(task, ctx) - The Tree Execution Matrix', () => {
     it('Executes suite lifecycles (Tree Builder -> Before -> Children -> After)', async () => {
       const timeline = []
-      const parent = createTask('Suite', () => { timeline.push('build_tree') })
+      const parent = createTask('Suite') // builds tree
       parent.after.push(() => { timeline.push('after') })
       parent.before.push(() => { timeline.push('before') })
 
@@ -88,7 +88,7 @@ describe('@quecto/test/lib/test', () => {
       parent.children.push(child)
 
       await run(parent, mockCtx)
-      deepStrictEqual(timeline, ['build_tree', 'before', 'run_test', 'after'])
+      deepStrictEqual(timeline, ['before', 'run_test', 'after'])
     })
 
     it('Traps unhandled execution errors into task.error', async () => {

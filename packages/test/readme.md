@@ -48,13 +48,6 @@ Don't want to change your code? Use our native ESM loader to intercept all `node
 node --import @quecto/test/register test.js
 ```
 
-### 3. Parallel CLI Execution (The Unix Way)
-We don't ship a bloated CLI orchestrator. We work *with* the platform. To run a folder of tests across all your CPU cores, use native Unix streams:
-
-```bash
-find test/ -name "*.test.js" | xargs -P 8 -n 1 node --import @quecto/test/register
-```
-
 ## How It Works
 
 `@quecto/test` operates in two distinct phases:

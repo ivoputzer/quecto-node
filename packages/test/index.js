@@ -11,35 +11,79 @@ console.log = (...args) => {
   else originalLog(...args)
 }
 
-/**
- * Core execution primitive of @quecto/test.
- * Evaluates a test or suite, invisibly binds it to the active async context,
- * and queues it for execution in the matrix.
- *
- * @param {string} name - The human-readable label for the test.
- * @param {Object|Function} [opts] - Configuration (e.g., { concurrency: 2, timeout: 50 }) or the test block.
- * @param {Function} [fn] - The execution block (sync, async, or (t, done) callback).
- * @returns {Promise<Object>} Resolves to the collapsed AST node once completely drained.
- */
+// The Implicit File-Level Root Task
+const rootTask = createTask('QUECTO_ROOT_NODE')
+let rootPromise = null
 
-export function test (...args) {
-  const task = createTask(...args)
-  const parent = ctx.getStore()
-  if (parent) {
-    parent.children.push(task)
-    return Promise.resolve()
+function scheduleRoot () {
+  if (!rootPromise) {
+    rootPromise = new Promise(resolve => {
+      // Drain the entire AST on the next tick, after the file finishes synchronous evaluation
+      setImmediate(() => {
+        run(rootTask, ctx).then(result => {
+          report(result)
+          if (process.env.QUECTO_TEST_EXIT_CODE) process.exitCode = 1
+          resolve(result)
+        })
+      })
+    })
   }
-  return run(task, ctx).then(result => {
-    report(result)
-    if (process.env.QUECTO_TEST_EXIT_CODE) process.exitCode = 1
-    return result
-  })
+  return rootPromise
 }
 
-test.only = (name, opts, fn) => test(name, resolveOptions(opts, { only: true }), fn || opts)
-test.skip = (name, opts, fn) => test(name, resolveOptions(opts, { skip: true }), fn || opts)
+function createInterface (isSuite) {
+  const api = (...args) => {
+    const fn = typeof args[1] === 'function' ? args[1] : args[2]
+    const task = createTask(...args)
+    const parent = ctx.getStore() || rootTask
 
-export const describe = test
-export const it = test
-export const before = (fn) => ctx.getStore()?.before.push(fn)
-export const after = (fn) => ctx.getStore()?.after.push(fn)
+    task.parent = parent
+
+    // Phase 1: Leaf nodes statically inherit hooks from ancestors during AST construction
+    if (!isSuite) {
+      let curr = parent
+      const befores = []; const afters = []
+      while (curr) {
+        if (curr.bddBefore) befores.unshift(...curr.bddBefore)
+        if (curr.bddAfter) afters.push(...curr.bddAfter)
+        curr = curr.parent
+      }
+      task.before.push(...befores)
+      task.after.push(...afters)
+    } else {
+      task.fn = null // Suites do not execute inside the Matrix
+    }
+
+    parent.children.push(task)
+
+    // Phase 1: Suites evaluate synchronously to build the tree immediately
+    if (isSuite && fn) {
+      ctx.run(task, () => {
+        try { fn() } catch (err) { task.error = err }
+      })
+    }
+
+    return parent === rootTask ? scheduleRoot() : Promise.resolve()
+  }
+
+  api.skip = (name, opts, fn) => api(name, resolveOptions(opts, { skip: true }), fn || opts)
+  api.only = (name, opts, fn) => api(name, resolveOptions(opts, { only: true }), fn || opts)
+  return api
+}
+
+export const describe = createInterface(true)
+export const it = createInterface(false)
+export const test = createInterface(false)
+
+export const before = (fn) => (ctx.getStore() || rootTask).before.push(fn)
+export const after = (fn) => (ctx.getStore() || rootTask).after.push(fn)
+export const beforeEach = (fn) => {
+  const node = ctx.getStore() || rootTask
+  node.bddBefore = node.bddBefore || []
+  node.bddBefore.push(fn)
+}
+export const afterEach = (fn) => {
+  const node = ctx.getStore() || rootTask
+  node.bddAfter = node.bddAfter || []
+  node.bddAfter.push(fn)
+}
