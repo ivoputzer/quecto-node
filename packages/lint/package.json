@@ -1,0 +1,13 @@
+{
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "q-test --register"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@quecto/test": "*"
+  }
+}
