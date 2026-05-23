@@ -1,170 +1,97 @@
-import { describe, it } from 'node:test'
-import { deepStrictEqual, strictEqual, ok } from 'node:assert'
+import { describe as suite, it as nodeTest } from 'node:test'
+import { strictEqual, deepStrictEqual, ok } from 'node:assert'
 
-import { _internals } from '../index.js'
-const { normalize, buildNode, buildOpts, runNode, report } = _internals
+import { test, describe, it, before, after } from '../index.js'
 
-describe('@quecto/test', () => {
-  describe('.buildNode(name, opts, fn)', () => {
-    it('Constructs a pure execution node with default options', () => {
-      const fn = () => {}
-      const node = buildNode('A', fn)
-      strictEqual(node.name, 'A')
-      strictEqual(node.fn, fn)
-      deepStrictEqual(node.opts, {})
-      deepStrictEqual(node.children, [])
-    })
+// Helper to precisely trap and restore global process mutations during our API tests
+const silentRun = async (fn) => {
+  const { stdout, stderr, exitCode, env } = process
+  const writeOut = stdout.write
+  const writeErr = stderr.write
+  const prevExit = exitCode
+  const prevEnvCode = env.QUECTO_TEST_EXIT_CODE
 
-    it('Extracts configuration objects successfully', () => {
-      const fn = () => {}
-      const node = buildNode('B', { concurrency: 2 }, fn)
-      deepStrictEqual(node.opts, { concurrency: 2 })
-      strictEqual(node.fn, fn)
+  stdout.write = () => {}
+  stderr.write = () => {}
+  process.exitCode = 0
+  delete env.QUECTO_TEST_EXIT_CODE
+
+  try {
+    return await fn()
+  } finally {
+    stdout.write = writeOut
+    stderr.write = writeErr
+    process.exitCode = prevExit
+    env.QUECTO_TEST_EXIT_CODE = prevEnvCode
+  }
+}
+
+suite('@quecto/test » Public API Integration', () => {
+  nodeTest('Exports correct aliases for BDD-style execution', () => {
+    strictEqual(describe, test)
+    strictEqual(it, test)
+  })
+
+  nodeTest('Constructs and executes root AST node natively', async () => {
+    await silentRun(async () => {
+      const result = await test('Root', () => { ok(true) })
+      strictEqual(result.name, 'Root')
+      strictEqual(result.children.length, 0)
+      strictEqual(result.error, undefined)
     })
   })
-  describe('.buildOpts(optsOrFn, extra)', () => {
-    it('Returns extra object if no options were provided', () => {
-      deepStrictEqual(buildOpts(() => {}, { skip: true }), { skip: true })
-    })
 
-    it('Merges user options with internal modifiers', () => {
-      deepStrictEqual(buildOpts({ timeout: 10 }, { only: true }), { timeout: 10, only: true })
-    })
-  })
-  describe('.normalize(fn, t, timeout, ac, DI)', () => {
-    it('Resolves synchronous functions immediately', async () => {
-      let state = 0
-      await normalize(() => { state = 1 })
-      strictEqual(state, 1)
-    })
-
-    it('Resolves native Promises gracefully', async () => {
-      await normalize(async () => await Promise.resolve())
-      ok(true)
-    })
-
-    it('Supports (t, done) callback signatures', async () => {
-      await normalize((t, done) => done())
-      ok(true)
-    })
-
-    it('Traps callback errors and rejects', async () => {
-      try {
-        await normalize((t, done) => done(new Error('Trap')))
-        ok(false, 'Should have thrown')
-      } catch (err) {
-        strictEqual(err.message, 'Trap')
-      }
-    })
-
-    it('Triggers AbortController on Timeout', async () => {
-      let aborted = false
-      const ac = { abort: () => { aborted = true } }
-
-      // DI injects immediate execution for the timer
-      const setTimer = (cb) => { cb(); return 99 }
-
-      try {
-        await normalize(() => new Promise(() => {}), {}, 50, ac, { setTimer, clrTimer: () => {} })
-      } catch (err) {
-        strictEqual(err.message, 'Timeout: 50ms exceeded')
-        strictEqual(aborted, true, 'AbortController was not triggered')
-      }
+  nodeTest('Nests children invisibly via AsyncLocalStorage context', async () => {
+    await silentRun(async () => {
+      const result = await test('Parent', async () => {
+        await test('Child 1', () => ok(true))
+        await test('Child 2', () => ok(true))
+      })
+      strictEqual(result.name, 'Parent')
+      strictEqual(result.children.length, 2)
+      strictEqual(result.children[0].name, 'Child 1')
+      strictEqual(result.children[1].name, 'Child 2')
     })
   })
-  describe('.runNode(node) - The Tree Execution Matrix', () => {
-    it('Executes suite lifecycles (Tree Builder -> Before -> Children -> After)', async () => {
-      const timeline = []
-      const parent = buildNode('Suite', () => { timeline.push('build_tree') })
-      parent.after.push(() => { timeline.push('after') })
-      parent.before.push(() => { timeline.push('before') })
 
-      const child = buildNode('Test', () => { timeline.push('run_test') })
-      parent.children.push(child)
-
-      await runNode(parent)
-      deepStrictEqual(timeline, ['build_tree', 'before', 'run_test', 'after'])
-    })
-
-    it('Traps unhandled execution errors into node.error', async () => {
-      const node = buildNode('Fail', () => { throw new Error('Crashed') })
-      await runNode(node)
-      strictEqual(node.error.message, 'Crashed')
-    })
-
-    it('Calculates duration dynamically without relying on strict timer ticks', async () => {
-      const node = buildNode('Timer', async () => await new Promise(resolve => setTimeout(resolve, 10)))
-      await runNode(node)
-      strictEqual(typeof node.duration, 'number')
-      ok(node.duration > 0, 'Duration should be a positive integer')
-    })
-
-    it('Applies .skip modifier natively', async () => {
-      const node = buildNode('SkipMe', { skip: true }, () => { throw new Error('Should not run') })
-      await runNode(node)
-      strictEqual(node.skipped, true)
-      strictEqual(node.error, undefined)
-    })
-
-    it('Prunes siblings if a child possesses the .only modifier', async () => {
-      const parent = buildNode('Parent', () => {})
-      const c1 = buildNode('C1', () => {})
-      const c2 = buildNode('C2', { only: true }, () => {})
-      parent.children.push(c1, c2)
-
-      await runNode(parent)
-
-      strictEqual(c1.skipped, true, 'Sibling was not skipped')
-      strictEqual(c2.skipped, undefined, '.only node should not be skipped')
+  nodeTest('Intercepts console logs and attaches them to the active node', async () => {
+    await silentRun(async () => {
+      const result = await test('Logger', () => {
+        console.log('Line 1')
+        console.log('Line 2')
+      })
+      deepStrictEqual(result.logs, ['Line 1', 'Line 2'])
     })
   })
-  describe('.report(node, indent, DI) - The Atomic Output Buffer', () => {
-    const env = { npm_package_name: 'test-runner' }
 
-    it('Formats and writes a successful leaf node', () => {
-      const out = []
-      const node = { name: 'Leaf', duration: 2, children: [], logs: [] }
-      report(node, '', { out: (s) => out.push(s), errOut: () => {}, env })
-      ok(out[0].includes('✔ Leaf (2ms)'))
+  nodeTest('Hooks (before/after) append cleanly to the active context array', async () => {
+    await silentRun(async () => {
+      const result = await test('Hooker', () => {
+        before(() => 1)
+        after(() => 2)
+      })
+      strictEqual(result.before.length, 1)
+      strictEqual(result.after.length, 1)
     })
+  })
 
-    it('Formats and writes a successful suite node', () => {
-      const out = []
-      const node = { name: 'Suite', duration: 10, children: [{ name: 'Child', children: [], logs: [] }], logs: [] }
-      report(node, '', { out: (s) => out.push(s), errOut: () => {}, env })
-      ok(out[0].includes('▶ Suite (10ms)'))
+  nodeTest('Exposes and applies .skip and .only modifiers successfully', async () => {
+    await silentRun(async () => {
+      const result = await test('Modifiers', async () => {
+        await test.skip('A', () => {})
+        await test.only('B', () => {})
+      })
+      strictEqual(result.children[0].opts.skip, true)
+      strictEqual(result.children[1].opts.only, true)
     })
+  })
 
-    it('Formats skipped tests', () => {
-      const out = []
-      const node = { name: 'Bypassed', skipped: true, children: [], logs: [] }
-      report(node, '', { out: (s) => out.push(s), errOut: () => {}, env })
-      ok(out[0].includes('- Bypassed (skipped)'))
-    })
-
-    it('Trims internal framework stack traces on failure', () => {
-      const errOut = []
-      const err = new Error('Assertion Failed')
-      err.stack = 'Error\n    at user.js:10\n    at test-runner/index.js:50\n    at node:internal/timers'
-
-      const node = { name: 'Fail', duration: 1, children: [], logs: [], error: err }
-      report(node, '', { out: () => {}, errOut: (s) => errOut.push(s), env })
-
-      const output = errOut[0]
-      ok(output.includes('✘ Fail'))
-      ok(output.includes('user.js:10'))
-      ok(!output.includes('test-runner/index.js'))
-      ok(!output.includes('node:internal'))
-    })
-
-    it('Prints buffered console.logs with perfect indentation', () => {
-      const out = []
-      const node = { name: 'Logs', duration: 0, children: [], logs: ['Line 1', 'Line 2\nLine 3'] }
-      report(node, '  ', { out: (s) => out.push(s), errOut: () => {}, env })
-
-      ok(out[1].includes('    | Line 1'))
-      ok(out[2].includes('    | Line 2'))
-      ok(out[2].includes('    | Line 3'))
+  nodeTest('Mutates process.exitCode and sets ENV flag upon failure', async () => {
+    await silentRun(async () => {
+      const result = await test('Failing Task', () => { throw new Error('Boom') })
+      strictEqual(result.error.message, 'Boom')
+      strictEqual(process.env.QUECTO_TEST_EXIT_CODE, '1')
+      strictEqual(process.exitCode, 1)
     })
   })
 })

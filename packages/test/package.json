@@ -8,7 +8,7 @@
     "q-test": "bin/q-test.js"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test test/**.test.js",
     "lint": "eslint",
     "quecto": "node bin/q-test.js --register"
   },
