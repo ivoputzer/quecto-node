@@ -118,7 +118,7 @@ export async function run (task, ctx) {
     const runnable = task.children.filter(c => !c.skipped)
 
     if (runnable.length > 0) {
-      const poolSize = task.opts.concurrency === true ? 4 : (task.opts.concurrency || 1)
+      const poolSize = task.opts.concurrency === true ? 8 : (task.opts.concurrency || 1)
       const iterator = runnable.entries()
       await Promise.all(
         Array.from({ length: poolSize }, async () => {
