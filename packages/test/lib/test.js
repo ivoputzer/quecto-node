@@ -1,4 +1,5 @@
 import { styleText } from 'node:util'
+import { createMock } from './mock.js'
 
 export const evaluate = (fn, context, timeout, controller, { setTimeout, clearTimeout } = globalThis) => new Promise((resolve, reject) => {
   let timer
@@ -42,10 +43,17 @@ export const resolveOptions = (optsOrFn, overrides) => typeof optsOrFn === 'func
 // The pure, recursive, pull-based V8 micro-task
 export async function run (task, ctx) {
   const start = Date.now()
-  const ac = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const ac = new AbortController()
+  let mock = null
 
   const context = {
     signal: ac?.signal,
+    get mock () {
+      if (!mock) {
+        mock = createMock()
+      }
+      return mock
+    },
     test: (...args) => {
       const child = createTask(...args)
       child.parent = task

@@ -1,6 +1,7 @@
 import { format } from 'node:util'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createTask, resolveOptions, evaluate, run, report } from './lib/test.js'
+import { createMock } from './lib/mock.js'
 
 export const ctx = new AsyncLocalStorage()
 const originalLog = console.log
@@ -118,3 +119,4 @@ export const before = defaultRunner.before
 export const after = defaultRunner.after
 export const beforeEach = defaultRunner.beforeEach
 export const afterEach = defaultRunner.afterEach
+export const mock = createMock()
