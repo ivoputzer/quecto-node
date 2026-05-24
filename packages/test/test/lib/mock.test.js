@@ -1,5 +1,5 @@
 import { describe, it } from 'node:test'
-import { strictEqual, throws, ok, fail } from 'node:assert'
+import { strictEqual, throws, ok } from 'node:assert'
 import { createMock, createSpy } from '../../lib/mock.js' // Adjust path accordingly
 
 describe('lib/mock', () => {
