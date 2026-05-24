@@ -34,17 +34,11 @@ export function createRunner (proc = process) {
 
   function createInterface (isSuite) {
     const api = (...args) => {
-      const fn = typeof args[1] === 'function' ? args[1] : args[2]
       const test = createTest(...args)
       const parent = ctx.getStore() || rootTask
 
-      // 1. Explicitly link the AST parent! No more magic.
+      test.isSuite = isSuite // <-- Injects the DNA
       test.parent = parent
-
-      if (isSuite) {
-        test.setup = fn // Hierarchy Builder
-        test.fn = null
-      }
 
       parent.children.push(test)
 

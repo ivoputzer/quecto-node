@@ -120,4 +120,138 @@ suite('@quecto/test » Public API Integration', () => {
 
     deepStrictEqual(runOrder, ['before', 'test1', 'before', 'test2'])
   })
+
+  nodeTest('describe block with all kind of hooks', async () => {
+    const runOrder = []
+    await silentRun(async ({ test, describe, before, after, beforeEach, afterEach }) => {
+      await describe('suite1', () => {
+        describe('suite2', () => {
+          test('suite2_test1', () => runOrder.push('suite2_test1'))
+          test('suite2_test2', () => runOrder.push('suite2_test2'))
+          after(() => runOrder.push('suite2_after'))
+          before(() => runOrder.push('suite2_before'))
+          beforeEach(() => runOrder.push('suite2_beforeEach'))
+          afterEach(() => runOrder.push('suite2_afterEach'))
+        })
+        test('suite1_test1', () => runOrder.push('suite1_test1'))
+        test('suite1_test2', () => runOrder.push('suite1_test2'))
+        after(() => runOrder.push('suite1_after'))
+        before(() => runOrder.push('suite1_before'))
+        beforeEach(() => runOrder.push('suite1_beforeEach'))
+        afterEach(() => runOrder.push('suite1_afterEach'))
+      })
+    })
+
+    deepStrictEqual(runOrder.join(', '), 'suite1_before, suite2_before, suite1_beforeEach, suite2_beforeEach, suite2_test1, suite2_afterEach, suite1_afterEach, suite1_beforeEach, suite2_beforeEach, suite2_test2, suite2_afterEach, suite1_afterEach, suite2_after, suite1_beforeEach, suite1_test1, suite1_afterEach, suite1_beforeEach, suite1_test2, suite1_afterEach, suite1_after')
+  })
+
+  nodeTest('test block with all kind of hooks', async () => {
+    const runOrder = []
+    await silentRun(async ({ test, describe, before, after, beforeEach, afterEach }) => {
+      await test('suite1', () => {
+        test('suite2', () => {
+          test('suite2_test1', () => runOrder.push('suite2_test1'))
+          test('suite2_test2', () => runOrder.push('suite2_test2'))
+          after(() => runOrder.push('suite2_after'))
+          before(() => runOrder.push('suite2_before'))
+          beforeEach(() => runOrder.push('suite2_beforeEach'))
+          afterEach(() => runOrder.push('suite2_afterEach'))
+        })
+        test('suite1_test1', () => runOrder.push('suite1_test1'))
+        test('suite1_test2', () => runOrder.push('suite1_test2'))
+        after(() => runOrder.push('suite1_after'))
+        before(() => runOrder.push('suite1_before'))
+        beforeEach(() => runOrder.push('suite1_beforeEach'))
+        afterEach(() => runOrder.push('suite1_afterEach'))
+      })
+    })
+
+    deepStrictEqual(runOrder.join(', '), 'suite1_before, suite1_beforeEach, suite2_before, suite1_beforeEach, suite2_beforeEach, suite2_test1, suite2_afterEach, suite1_afterEach, suite1_beforeEach, suite2_beforeEach, suite2_test2, suite2_afterEach, suite1_afterEach, suite2_after, suite1_afterEach, suite1_beforeEach, suite1_test1, suite1_afterEach, suite1_beforeEach, suite1_test2, suite1_afterEach, suite1_after')
+  })
+
+  nodeTest('Integration: Engine Architecture & Concurrency', async () => {
+    const result = await silentRun(async ({ test }) => {
+      return await test('@quecto/test » Engine Architecture', { concurrency: 3 }, async (t) => {
+        await t.test('Handles synchronous primitives', () => { ok(true) })
+
+        await t.test('Handles asynchronous promise loops', async () => {
+          const value = await Promise.resolve(42)
+          strictEqual(value, 42)
+        })
+
+        await t.test('Isolates errors without crashing parallel workers', async () => {
+          try { strictEqual(1, 2) } catch (err) { ok(err.name === 'AssertionError') }
+        })
+
+        await t.test('Supports nested test queues natively', async (t) => {
+          await t.test('Inner task 1', () => ok(1))
+          await t.test('Inner task 2', () => ok(1))
+        })
+      })
+    })
+
+    strictEqual(result.error, undefined)
+    const suiteNode = result.children[0]
+    strictEqual(suiteNode.name, '@quecto/test » Engine Architecture')
+    strictEqual(suiteNode.children[0].error, undefined)
+    strictEqual(suiteNode.children[1].error, undefined)
+    strictEqual(suiteNode.children[2].error, undefined)
+    strictEqual(suiteNode.children[3].children[0].error, undefined)
+  })
+
+  nodeTest('Integration: Everything E2E Suite & Console Trapping', async () => {
+    const result = await silentRun(async ({ test }) => {
+      return await test('@quecto/test » The Everything E2E Suite', { concurrency: 2 }, async (t) => {
+        await t.test('Tape Style Execution', async (t) => {
+          await t.test('Nested Tape', () => ok(true))
+        })
+
+        await t.test('Console Trap Integration', () => {
+          console.log('This log will be beautifully attached under this test.')
+          console.log('Even if 5 other tests are running right now.')
+          ok(true)
+        })
+      })
+    })
+
+    strictEqual(result.error, undefined)
+    const suiteNode = result.children[0]
+    strictEqual(suiteNode.children[0].children[0].error, undefined)
+    deepStrictEqual(suiteNode.children[1].logs, [
+      'This log will be beautifully attached under this test.',
+      'Even if 5 other tests are running right now.'
+    ])
+  })
+
+  nodeTest('Integration: BDD Ecosystem with Hooks & Pruning', async () => {
+    const result = await silentRun(async ({ describe, it, before, after }) => {
+      return await describe('@quecto/test » BDD Ecosystem with Hooks', () => {
+        let state = 0
+
+        before(() => { state = 10 })
+        after(() => { strictEqual(state, 11) })
+
+        it('Reads from hook', () => {
+          strictEqual(state, 10)
+          state++
+        })
+
+        describe('Pruning mechanics', () => {
+          it.skip('I am deliberately ignored', () => { throw new Error('Boom') })
+          it('I am bypassed because my sibling is an .only', () => { throw new Error('Boom') })
+          it.only('I am the exclusive test in this block', () => { ok(true) })
+        })
+      })
+    })
+
+    strictEqual(result.error, undefined)
+    const bddSuite = result.children[0]
+    strictEqual(bddSuite.children[0].error, undefined) // 'Reads from hook' passed
+
+    const pruningSuite = bddSuite.children[1]
+    strictEqual(pruningSuite.children[0].skipped, true)  // Skip runs correctly
+    strictEqual(pruningSuite.children[1].skipped, true)  // Bypassed by only
+    strictEqual(pruningSuite.children[2].skipped, undefined) // Only runs
+    strictEqual(pruningSuite.children[2].error, undefined)
+  })
 })

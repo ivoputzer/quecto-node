@@ -29,15 +29,11 @@ export const evaluate = (fn, context, timeout, controller, { setTimeout, clearTi
 
 export const createTest = (name, optsOrFn, maybeFn) => ({
   name,
-  parent: null, // Stable Shape: pre-declared to avoid shape transitions
-  setup: null, // Hook for AST generation inside the Matrix
+  parent: null,
+  isSuite: false, // The only flag we need!
   fn: typeof optsOrFn === 'function' ? optsOrFn : maybeFn,
   opts: typeof optsOrFn === 'object' ? optsOrFn : {},
   children: [],
-  // before: [],
-  // after: [],
-  // beforeEach: [],
-  // afterEach: [],
   logs: [],
   hooks: {
     before: [],
@@ -46,35 +42,30 @@ export const createTest = (name, optsOrFn, maybeFn) => ({
     afterEach: []
   },
   get before () {
-    // Only leaf tests (task.fn) inherit beforeEach hooks from their ancestors!
-    if (this.fn) {
-      const inherited = []
-      let ancestor = this.parent
-      while (ancestor) {
-        if (ancestor.hooks.beforeEach.length) inherited.unshift(...ancestor.hooks.beforeEach)
-        ancestor = ancestor.parent
-      }
-      // Inherited beforeEach run BEFORE the test's own before hooks
-      return [...inherited, ...this.hooks.before]
-    }
-    // Suites just run their own before hooks
     return this.hooks.before
   },
-
   get after () {
-    // Only leaf tests inherit afterEach hooks
-    if (this.fn) {
-      const inherited = []
-      let ancestor = this.parent
-      while (ancestor) {
-        if (ancestor.hooks.afterEach.length) inherited.push(...ancestor.hooks.afterEach) // Inner first
-        ancestor = ancestor.parent
-      }
-      // Test's own after hooks run BEFORE inherited afterEach hooks
-      return [...this.hooks.after, ...inherited]
-    }
-    // Suites just run their own after hooks
     return this.hooks.after
+  },
+  get beforeEach () {
+    if (this.isSuite) return [] // 💥 BOOM. I am a folder. I do not inherit.
+    const inherited = []
+    let ancestor = this.parent
+    while (ancestor) {
+      if (ancestor.hooks.beforeEach.length) inherited.unshift(...ancestor.hooks.beforeEach)
+      ancestor = ancestor.parent
+    }
+    return inherited
+  },
+  get afterEach () {
+    if (this.isSuite) return [] // 💥 BOOM. I am a folder.
+    const inherited = []
+    let ancestor = this.parent
+    while (ancestor) {
+      if (ancestor.hooks.afterEach.length) inherited.push(...ancestor.hooks.afterEach)
+      ancestor = ancestor.parent
+    }
+    return inherited
   }
 })
 
@@ -97,7 +88,6 @@ export async function run (task, ctx) {
     test: (...args) => {
       const child = createTest(...args)
       child.parent = task
-      // ctx.onTask?.(child)
       task.children.push(child)
       return Promise.resolve()
     },
@@ -105,7 +95,6 @@ export async function run (task, ctx) {
       const child = createTest(...args)
       child.parent = task
       child.opts.skip = true
-      // ctx.onTask?.(child)
       task.children.push(child)
       return Promise.resolve()
     }
@@ -114,14 +103,16 @@ export async function run (task, ctx) {
   try {
     if (task.opts.skip) throw new Error('ERR_SKIPPED')
 
-    // Phase 1: Native inside-the-matrix Suite AST generation
-    if (task.setup) await ctx.run(task, () => evaluate(task.setup, context, task.opts.timeout, ac))
+    // 1. Inherited Setup (Suites return [], Tests return hooks)
+    for (const hook of task.beforeEach) await evaluate(hook, context, task.opts.timeout, ac)
 
-    for (const hook of task.before) await evaluate(hook, context, task.opts.timeout, ac)
-
-    // Evaluates test assertions.
+    // 2. Block Execution (Works identical for describes and tests!)
     if (task.fn) await ctx.run(task, () => evaluate(task.fn, context, task.opts.timeout, ac))
 
+    // 3. Child Setup
+    for (const hook of task.before) await evaluate(hook, context, task.opts.timeout, ac)
+
+    // 4. Children Matrix
     const exclusive = task.children.filter(c => c.opts.only)
     if (exclusive.length) task.children.forEach(c => { if (!c.opts.only) c.skipped = true })
     const runnable = task.children.filter(c => !c.skipped)
@@ -129,14 +120,20 @@ export async function run (task, ctx) {
     if (runnable.length > 0) {
       const poolSize = task.opts.concurrency === true ? 4 : (task.opts.concurrency || 1)
       const iterator = runnable.entries()
-      await Promise.all(Array.from({ length: poolSize }, async () => {
-        for (let step = iterator.next(); !step.done; step = iterator.next()) {
-          await run(step.value[1], ctx)
-        }
-      }))
+      await Promise.all(
+        Array.from({ length: poolSize }, async () => {
+          for (let step = iterator.next(); !step.done; step = iterator.next()) {
+            await run(step.value[1], ctx)
+          }
+        })
+      )
     }
 
+    // 5. Child Teardown
     for (const hook of task.after) await evaluate(hook, context, task.opts.timeout, ac)
+
+    // 6. Inherited Teardown
+    for (const hook of task.afterEach) await evaluate(hook, context, task.opts.timeout, ac)
   } catch (error) {
     if (error.message === 'ERR_SKIPPED') task.skipped = true
     else task.error = error
