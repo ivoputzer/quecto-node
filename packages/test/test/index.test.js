@@ -105,8 +105,6 @@ suite('@quecto/test » Public API Integration', () => {
       })
     })
 
-    // FAIL EXPECTATION: Under current code, runOrder will be empty []
-    // because the scheduler drained before the timeout finished!
     deepStrictEqual(runOrder, ['before_each', 'test'])
   })
 })
