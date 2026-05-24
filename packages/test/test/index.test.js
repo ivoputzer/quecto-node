@@ -107,4 +107,17 @@ suite('@quecto/test » Public API Integration', () => {
 
     deepStrictEqual(runOrder, ['before_each', 'test'])
   })
+
+  nodeTest('Flat/Floating style suite with late-declared beforeEach', async () => {
+    const runOrder = []
+    await silentRun(async ({ test, beforeEach }) => {
+      await test('suite', () => {
+        test('t1', () => runOrder.push('test1'))
+        test('t2', () => runOrder.push('test2'))
+        beforeEach(() => runOrder.push('before'))
+      })
+    })
+
+    deepStrictEqual(runOrder, ['before', 'test1', 'before', 'test2'])
+  })
 })
