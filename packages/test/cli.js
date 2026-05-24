@@ -5,9 +5,12 @@ import * as fs from './lib/fs.js'
 import * as exports from './cli.js'
 
 import { styleText, parseArgs } from 'node:util'
+import { fileURLToPath } from 'node:url'
+
+const registerPath = fileURLToPath(new URL('./register.js', import.meta.url))
 
 export const runFile = async (path, { register } = {}, { spawn } = cp, { execPath, execArgv } = process) => {
-  const registerArgs = register ? ['--import', '@quecto/test/register'] : []
+  const registerArgs = register ? ['--import', registerPath] : []
   const suite = spawn(execPath, [...execArgv, ...registerArgs, path], { stdio: 'inherit' })
   return new Promise((resolve, reject) => {
     suite.once('close', (code) => code === 0 ? resolve() : reject(path))
