@@ -1,28 +1,30 @@
 import { styleText } from 'node:util'
 
-export const evaluate = (fn, context, timeout, abortController, { setTimeout, clearTimeout } = globalThis) =>
-  new Promise((resolve, reject) => {
-    let timer
-    const finalize = (err) => {
-      if (timer) clearTimeout(timer)
-      err ? reject(err) : resolve()
-    }
+export const evaluate = (fn, context, timeout, controller, { setTimeout, clearTimeout } = globalThis) => new Promise((resolve, reject) => {
+  let timer
 
-    if (timeout) {
-      timer = setTimeout(() => {
-        const err = new Error(`Timeout: ${timeout}ms exceeded`)
-        abortController?.abort(err)
-        finalize(err)
-      }, timeout)
-    }
+  const done = (err) => {
+    if (timer) clearTimeout(timer)
+    err ? reject(err) : resolve()
+  }
 
-    try {
-      if (!fn) return finalize()
-      const result = fn(context, finalize)
-      if (result?.then) result.then(() => finalize(), finalize)
-      else if (fn.length < 2) finalize()
-    } catch (err) { finalize(err) }
-  })
+  if (timeout) {
+    timer = setTimeout(() => {
+      const err = new Error(`Timeout: ${timeout}ms exceeded`)
+      controller?.abort(err)
+      done(err)
+    }, timeout)
+  }
+
+  try {
+    if (!fn) return done()
+    const result = fn(context, done)
+    if (result?.then) result.then(() => done(), done)
+    else if (fn.length < 2) done()
+  } catch (err) {
+    done(err)
+  }
+})
 
 export const createTask = (name, optsOrFn, maybeFn) => ({
   name,
