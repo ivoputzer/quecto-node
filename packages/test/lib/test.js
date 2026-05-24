@@ -37,8 +37,7 @@ export const createTask = (name, optsOrFn, maybeFn) => ({
   logs: []
 })
 
-export const resolveOptions = (optsOrFn, overrides) =>
-  typeof optsOrFn === 'function' ? overrides : { ...optsOrFn, ...overrides }
+export const resolveOptions = (optsOrFn, overrides) => typeof optsOrFn === 'function' ? overrides : { ...optsOrFn, ...overrides }
 
 // The pure, recursive, pull-based V8 micro-task
 export async function run (task, ctx) {
@@ -50,7 +49,7 @@ export async function run (task, ctx) {
     test: (...args) => {
       const child = createTask(...args)
       child.parent = task
-      if (ctx.onTask) ctx.onTask(child)
+      ctx.onTask?.(child)
       task.children.push(child)
       return Promise.resolve()
     },
@@ -58,7 +57,7 @@ export async function run (task, ctx) {
       const child = createTask(...args)
       child.parent = task
       child.opts.skip = true
-      if (ctx.onTask) ctx.onTask(child)
+      ctx.onTask?.(child)
       task.children.push(child)
       return Promise.resolve()
     }
