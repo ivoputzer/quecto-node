@@ -31,7 +31,8 @@ if (argv.includes('--version') || argv.includes('-v')) {
 }
 
 try {
-  runSuite(mapOptions(argv.slice(2)))
+  await runSuite(mapOptions(argv.slice(2)))
+  exit(0)
 } catch (error) {
   stderr.write(styleText(['red', 'bold'], `\n✘ Configuration Error: ${error.message}\n\n`))
   exit(1)
