@@ -1,16 +1,16 @@
 import { describe, it } from 'node:test'
 import { deepStrictEqual, strictEqual, ok } from 'node:assert'
 
-import { evaluate, createTask, resolveOptions, run, report } from '../../lib/test.js'
+import { evaluate, createTest, resolveOptions, run, report } from '../../lib/test.js'
 
 // Simple mock context since our engine relies on DI for Context Tracking internally
 const mockCtx = { run: async (store, callback) => await callback() }
 
 describe('@quecto/test/lib/test', () => {
-  describe('.createTask(name, opts, fn)', () => {
+  describe('.createTest(name, opts, fn)', () => {
     it('Constructs a pure execution task with default options', () => {
       const fn = () => {}
-      const task = createTask('A', fn)
+      const task = createTest('A', fn)
       strictEqual(task.name, 'A')
       strictEqual(task.fn, fn)
       deepStrictEqual(task.opts, {})
@@ -19,7 +19,7 @@ describe('@quecto/test/lib/test', () => {
 
     it('Extracts configuration objects successfully', () => {
       const fn = () => {}
-      const task = createTask('B', { concurrency: 2 }, fn)
+      const task = createTest('B', { concurrency: 2 }, fn)
       deepStrictEqual(task.opts, { concurrency: 2 })
       strictEqual(task.fn, fn)
     })
@@ -80,11 +80,11 @@ describe('@quecto/test/lib/test', () => {
   describe('.run(task, ctx) - The Tree Execution Matrix', () => {
     it('Executes suite lifecycles (Tree Builder -> Before -> Children -> After)', async () => {
       const timeline = []
-      const parent = createTask('Suite') // builds tree
+      const parent = createTest('Suite') // builds tree
       parent.after.push(() => { timeline.push('after') })
       parent.before.push(() => { timeline.push('before') })
 
-      const child = createTask('Test', () => { timeline.push('run_test') })
+      const child = createTest('Test', () => { timeline.push('run_test') })
       parent.children.push(child)
 
       await run(parent, mockCtx)
@@ -92,29 +92,29 @@ describe('@quecto/test/lib/test', () => {
     })
 
     it('Traps unhandled execution errors into task.error', async () => {
-      const task = createTask('Fail', () => { throw new Error('Crashed') })
+      const task = createTest('Fail', () => { throw new Error('Crashed') })
       await run(task, mockCtx)
       strictEqual(task.error.message, 'Crashed')
     })
 
     it('Calculates duration dynamically without relying on strict timer ticks', async () => {
-      const task = createTask('Timer', async () => await new Promise(resolve => setTimeout(resolve, 10)))
+      const task = createTest('Timer', async () => await new Promise(resolve => setTimeout(resolve, 10)))
       await run(task, mockCtx)
       strictEqual(typeof task.duration, 'number')
       ok(task.duration > 0, 'Duration should be a positive integer')
     })
 
     it('Applies .skip modifier natively', async () => {
-      const task = createTask('SkipMe', { skip: true }, () => { throw new Error('Should not run') })
+      const task = createTest('SkipMe', { skip: true }, () => { throw new Error('Should not run') })
       await run(task, mockCtx)
       strictEqual(task.skipped, true)
       strictEqual(task.error, undefined)
     })
 
     it('Prunes siblings if a child possesses the .only modifier', async () => {
-      const parent = createTask('Parent', () => {})
-      const c1 = createTask('C1', () => {})
-      const c2 = createTask('C2', { only: true }, () => {})
+      const parent = createTest('Parent', () => {})
+      const c1 = createTest('C1', () => {})
+      const c2 = createTest('C2', { only: true }, () => {})
       parent.children.push(c1, c2)
 
       await run(parent, mockCtx)

@@ -27,15 +27,55 @@ export const evaluate = (fn, context, timeout, controller, { setTimeout, clearTi
   }
 })
 
-export const createTask = (name, optsOrFn, maybeFn) => ({
+export const createTest = (name, optsOrFn, maybeFn) => ({
   name,
+  parent: null, // Stable Shape: pre-declared to avoid shape transitions
   setup: null, // Hook for AST generation inside the Matrix
   fn: typeof optsOrFn === 'function' ? optsOrFn : maybeFn,
   opts: typeof optsOrFn === 'object' ? optsOrFn : {},
   children: [],
-  before: [],
-  after: [],
-  logs: []
+  // before: [],
+  // after: [],
+  // beforeEach: [],
+  // afterEach: [],
+  logs: [],
+  hooks: {
+    before: [],
+    after: [],
+    beforeEach: [],
+    afterEach: []
+  },
+  get before () {
+    // Only leaf tests (task.fn) inherit beforeEach hooks from their ancestors!
+    if (this.fn) {
+      const inherited = []
+      let ancestor = this.parent
+      while (ancestor) {
+        if (ancestor.hooks.beforeEach.length) inherited.unshift(...ancestor.hooks.beforeEach)
+        ancestor = ancestor.parent
+      }
+      // Inherited beforeEach run BEFORE the test's own before hooks
+      return [...inherited, ...this.hooks.before]
+    }
+    // Suites just run their own before hooks
+    return this.hooks.before
+  },
+
+  get after () {
+    // Only leaf tests inherit afterEach hooks
+    if (this.fn) {
+      const inherited = []
+      let ancestor = this.parent
+      while (ancestor) {
+        if (ancestor.hooks.afterEach.length) inherited.push(...ancestor.hooks.afterEach) // Inner first
+        ancestor = ancestor.parent
+      }
+      // Test's own after hooks run BEFORE inherited afterEach hooks
+      return [...this.hooks.after, ...inherited]
+    }
+    // Suites just run their own after hooks
+    return this.hooks.after
+  }
 })
 
 export const resolveOptions = (optsOrFn, overrides) => typeof optsOrFn === 'function' ? overrides : { ...optsOrFn, ...overrides }
@@ -55,17 +95,17 @@ export async function run (task, ctx) {
       return mock
     },
     test: (...args) => {
-      const child = createTask(...args)
+      const child = createTest(...args)
       child.parent = task
-      ctx.onTask?.(child)
+      // ctx.onTask?.(child)
       task.children.push(child)
       return Promise.resolve()
     },
     skip: (...args) => {
-      const child = createTask(...args)
+      const child = createTest(...args)
       child.parent = task
       child.opts.skip = true
-      ctx.onTask?.(child)
+      // ctx.onTask?.(child)
       task.children.push(child)
       return Promise.resolve()
     }

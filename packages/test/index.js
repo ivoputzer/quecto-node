@@ -1,6 +1,6 @@
 import { format } from 'node:util'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { createTask, resolveOptions, evaluate, run, report } from './lib/test.js'
+import { createTest, resolveOptions, evaluate, run, report } from './lib/test.js'
 import { createMock } from './lib/mock.js'
 
 export const ctx = new AsyncLocalStorage()
@@ -13,84 +13,14 @@ console.log = (...args) => {
 }
 
 export function createRunner (proc = process) {
-  const rootTask = createTask('QUECTO_ROOT_NODE')
+  const rootTask = createTest('QUECTO_ROOT_NODE')
   let rootPromise = null
-
-  function decorate (task) {
-    const fn = task.fn
-    if (!fn || task.isSuite) return
-
-    task.fn = async (context, finalize) => {
-      let curr = task.parent
-
-      /*
-
-      [TODO] Fast-scan to see if hooks even exist in the ancestry
-
-      let hasHooks = false
-
-      while (curr) {
-        if (curr.beforeEach || curr.afterEach) {
-          hasHooks = true
-          break
-        }
-        curr = curr.parent
-      }
-
-      Fast-Path: No hooks = Zero allocations, zero loops, direct execution!
-      if (!hasHooks) {
-        return await evaluate(fn, context)
-      }
-
-      curr = task.parent
-
-      => consider implementing this directly as task.hasHooks so that one can do task.parent.hasHooks 🤔
-
-      */
-      const befores = []
-      const afters = []
-
-      // Dynamic Runtime Hook Pulling
-      while (curr) {
-        if (curr.beforeEach) befores.unshift(...curr.beforeEach) // Outer first
-        if (curr.afterEach) afters.push(...curr.afterEach)       // Inner first
-        curr = curr.parent
-      }
-
-      for (const hook of befores) await evaluate(hook, context)
-
-      /*
-      [TODO]
-
-      await evaluate(fn, context)
-
-      ⬇ Isn't the following code just doing what evaluate does?
-
-      => watch for side-effects and see if this can be refactored or if a specific part of evaluate can be extracted
-
-      */
-
-      await new Promise((resolve, reject) => {
-        const done = (err) => err ? reject(err) : resolve()
-        try {
-          const result = fn(context, done)
-          if (result?.then) result.then(() => resolve(), reject)
-          else if (fn.length < 2) resolve()
-        } catch (err) { reject(err) }
-      })
-
-      for (const hook of afters) await evaluate(hook, context)
-    }
-  }
 
   function scheduleRoot () {
     if (!rootPromise) {
       rootPromise = new Promise(resolve => {
         setImmediate(() => {
-          const matrixCtx = {
-            run: (store, cb) => ctx.run(store, cb),
-            onTask: decorate
-          }
+          const matrixCtx = { run: (store, cb) => ctx.run(store, cb) }
           run(rootTask, matrixCtx).then(result => {
             report(result, '', proc)
             if (proc.env.QUECTO_TEST_EXIT_CODE) proc.exitCode = 1
@@ -105,20 +35,18 @@ export function createRunner (proc = process) {
   function createInterface (isSuite) {
     const api = (...args) => {
       const fn = typeof args[1] === 'function' ? args[1] : args[2]
-      const task = createTask(...args)
+      const test = createTest(...args)
       const parent = ctx.getStore() || rootTask
 
-      task.parent = parent
-      task.isSuite = isSuite
+      // 1. Explicitly link the AST parent! No more magic.
+      test.parent = parent
 
       if (isSuite) {
-        task.setup = fn // The Matrix will natively await the Suite AST Builder!
-        task.fn = null
-      } else {
-        decorate(task)
+        test.setup = fn // Hierarchy Builder
+        test.fn = null
       }
 
-      parent.children.push(task)
+      parent.children.push(test)
 
       return parent === rootTask ? scheduleRoot() : Promise.resolve()
     }
@@ -132,18 +60,11 @@ export function createRunner (proc = process) {
     test: createInterface(false),
     describe: createInterface(true),
     it: createInterface(false),
-    before: (fn) => (ctx.getStore() || rootTask).before.push(fn),
-    after: (fn) => (ctx.getStore() || rootTask).after.push(fn),
-    beforeEach: (fn) => {
-      const node = ctx.getStore() || rootTask
-      node.beforeEach = node.beforeEach || []
-      node.beforeEach.push(fn)
-    },
-    afterEach: (fn) => {
-      const node = ctx.getStore() || rootTask
-      node.afterEach = node.afterEach || []
-      node.afterEach.push(fn)
-    }
+    // 2. Push directly into the isolated hooks storage!
+    before: (fn) => (ctx.getStore() || rootTask).hooks.before.push(fn),
+    after: (fn) => (ctx.getStore() || rootTask).hooks.after.push(fn),
+    beforeEach: (fn) => (ctx.getStore() || rootTask).hooks.beforeEach.push(fn),
+    afterEach: (fn) => (ctx.getStore() || rootTask).hooks.afterEach.push(fn)
   }
 }
 
