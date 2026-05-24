@@ -13,13 +13,13 @@ import { strictEqual, ok, fail } from 'node:assert'
  *
  * 1. DO NOT use `node:timers/promises` or `AbortController` internally.
  *    Instantiating, listening to, and aborting `AbortController` instances allocates
- *    heavy JS/C++ backed EventTargets. It makes the timeout path 30x SLOWER than the
+ *    heavy JS/C++ backed EventTargets. It makes the timeout path ~30x SLOWER than the
  *    highly optimized global `setTimeout` and `clearTimeout` C++ bindings used here.
  *
  * 2. DO NOT use `util.promisify` inside the execution loop.
  *    In real-world test suites (highly polymorphic/megamorphic function shapes),
  *    `util.promisify` falls off a JIT inline cache cliff due to constant prototype
- *    symbol lookups, making it up to 27x SLOWER than this manual promise flow.
+ *    symbol lookups, making it up to ~27x SLOWER than this manual promise flow.
  *
  * 3. DO NOT extract local variables into a helper class or shared object.
  *    Keeping `timer` and `done` as local lexical variables allows V8's Escape Analysis

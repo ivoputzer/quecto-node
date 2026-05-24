@@ -1,9 +1,10 @@
 import { describe, it } from 'node:test'
 import { deepStrictEqual, strictEqual, rejects, ok } from 'node:assert'
-
+import { fileURLToPath } from 'node:url'
 import { mapOptions, exitCode, runFile, runSuite } from '../cli.js'
 
 describe('@quecto/test/cli', () => {
+  const expectedRegisterPath = fileURLToPath(new URL('../register.js', import.meta.url))
   describe('.mapOptions(args)', () => {
     const mockOS = { availableParallelism: () => 4 }
     const mockProcess = { cwd: () => '/current/working/directory' }
@@ -45,7 +46,7 @@ describe('@quecto/test/cli', () => {
         spawn: (cmd, args) => ({
           once: (event, fn) => {
             strictEqual(event, 'close')
-            deepStrictEqual(args, ['--import', '@quecto/test/register', 'test_file.js'])
+            deepStrictEqual(args, ['--import', expectedRegisterPath, 'test_file.js'])
             fn(0)
           }
         })
@@ -99,7 +100,7 @@ describe('@quecto/test/cli', () => {
 
       deepStrictEqual(
         capturedArgs,
-        ['--experimental-vm-modules', '--no-warnings', '--import', '@quecto/test/register', 'target.test.js'],
+        ['--experimental-vm-modules', '--no-warnings', '--import', expectedRegisterPath, 'target.test.js'],
         'Should array-spread all execution parameters into a single, perfectly indexed list'
       )
     })
