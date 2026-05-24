@@ -18,7 +18,7 @@ export const runFile = async (path, { register } = {}, { spawn } = cp, { execPat
 }
 
 export const defaultOptions = {
-  match: '\\.?test\\.js$',
+  match: '\\.test\\.js$',
   ignore: '(^|\\/)(node_modules|\\.git)(\\/|$)',
 }
 
