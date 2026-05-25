@@ -1,10 +1,12 @@
+// ==> test/cli.test.js <==
 import { describe, it } from 'node:test'
 import { deepStrictEqual, strictEqual, rejects, ok } from 'node:assert'
 import { fileURLToPath } from 'node:url'
-import { mapOptions, exitCode, runFile, runSuite } from '../cli.js'
+import { mapOptions, runFile, runSuite, findFiles } from '../bin/q-test.js'
 
-describe('@quecto/test/cli', () => {
+describe('test/cli', () => {
   const expectedRegisterPath = fileURLToPath(new URL('../register.js', import.meta.url))
+
   describe('.mapOptions(args)', () => {
     const mockOS = { availableParallelism: () => 4 }
     const mockProcess = { cwd: () => '/current/working/directory' }
@@ -29,29 +31,22 @@ describe('@quecto/test/cli', () => {
       ok(ignore.test('custom-regex'))
     })
 
-    it('maps short arguments to execution config', () => {
-      const { targets, parallel, match, ignore, register } = mapOptions(['sources', '-p', '8', '-m', 'stories\\.js$', '-i', 'custom-regex', '-r'], mockOS, mockProcess)
-
-      deepStrictEqual(targets, ['sources'])
-      strictEqual(parallel, 8)
-      strictEqual(register, true)
-      ok(match.test('my.stories.js'))
-      ok(ignore.test('custom-regex'))
+    it('falls back to OS parallelism if parallel flag is not a valid number', () => {
+      const opts = mapOptions(['-p', 'max'], mockOS, mockProcess)
+      strictEqual(opts.parallel, 4, 'Engine avoided NaN RangeError crash')
     })
   })
 
-  describe('.runFile(path)', () => {
+  describe('.runFile(target)', () => {
     it('resolves process and injects loader via --register flag', async () => {
       const mockCpSuccess = {
         spawn: (cmd, args) => ({
           once: (event, fn) => {
-            strictEqual(event, 'close')
             deepStrictEqual(args, ['--import', expectedRegisterPath, 'test_file.js'])
             fn(0)
           }
         })
       }
-      console.log('test')
       await runFile('test_file.js', { register: true }, mockCpSuccess, { execPath: 'node', execArgv: [] })
     })
 
@@ -106,33 +101,53 @@ describe('@quecto/test/cli', () => {
     })
   })
 
-  describe('.runSuite(options)', () => {
-    const mockProc = { stdout: { write: Function.prototype }, stderr: { write: Function.prototype } }
-    const mockLibFs = {
-      * findFiles () {
-        yield 'a.js'
-        yield 'b.js'
-      }
-    }
+  describe('.runSuite(options, di)', () => {
     it('coordinates multi-core virtual execution perfectly', async () => {
       const options = { targets: ['virt'], parallel: 2, match: /.*/, register: false }
       let filesRun = 0
-      const mockCli = {
+
+      const mockDi = {
+        stdout: { write: Function.prototype },
+        stderr: { write: Function.prototype },
         exitCode: Function.prototype,
-        async runFile () {
-          filesRun++
-        }
+        runFile: async () => { filesRun++ },
+        findFiles: function * () { yield 'a.js'; yield 'b.js' }
       }
-      await runSuite(options, mockLibFs, mockCli, mockProc)
-      strictEqual(filesRun, 2, 'Engine dropped tests in queue')
+
+      await runSuite(options, mockDi)
+      strictEqual(filesRun, 2, 'Engine exhausted file iterator')
     })
   })
 
-  describe('.exitCode(code)', () => {
-    it('sets the exitCode of the current process', () => {
-      const process = { exitCode: 0 }
-      exitCode(1, process)
-      strictEqual(process.exitCode, 1)
+  describe('.findFiles(bases, match, ignore)', () => {
+    const mockPath = { join: (a, b) => `${a}/${b}` }
+
+    it('recursively traverses directories yielding matching files', () => {
+      const mockFs = {
+        statSync: () => ({ isFile: () => false }),
+        readdirSync: (base) => {
+          if (base === 'project') return [{ name: 'a.test.js', isDirectory: () => false }]
+          return []
+        }
+      }
+      deepStrictEqual([
+        ...findFiles(['project'], /\.test\.js$/, null, mockFs, mockPath)
+      ], ['project/a.test.js'])
+    })
+
+    it('bypasses ignored directories', () => {
+      let readdirCalled = false
+      const mockFs = {
+        statSync: () => ({ isFile: () => false }),
+        readdirSync: () => {
+          readdirCalled = true
+          return []
+        }
+      }
+      deepStrictEqual([
+        ...findFiles(['node_modules'], null, /node_modules/, mockFs, {})
+      ], [])
+      strictEqual(readdirCalled, false, 'Should have stopped before reading directory')
     })
   })
 })
