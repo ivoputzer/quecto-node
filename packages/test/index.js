@@ -1,7 +1,7 @@
 import { format } from 'node:util'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { createTest, resolveOptions, evaluate, run, report } from './lib/test.js'
-import { createMock } from './lib/mock.js'
+import { createTest, resolveOptions, run, report } from './src/test.js'
+import { createMock } from './src/mock.js'
 
 export const ctx = new AsyncLocalStorage()
 const originalLog = console.log
@@ -72,3 +72,8 @@ export const after = defaultRunner.after
 export const beforeEach = defaultRunner.beforeEach
 export const afterEach = defaultRunner.afterEach
 export const mock = createMock()
+
+/*
+  [TODO]
+  - to conform with node:test api eventually we need to export a .run function that currently matches our runFile from q-test cli
+*/
