@@ -1,79 +1,51 @@
 import { format } from 'node:util'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { createTest, resolveOptions, run, report } from './src/test.js'
+import { Node, TestNode, resolveOptions, run, report } from './src/test.js'
 import { createMock } from './src/mock.js'
 
 export const ctx = new AsyncLocalStorage()
-const originalLog = console.log
+export const rootNode = new Node('QUECTO_ROOT_NODE')
 
+const originalLog = console.log
 console.log = (...args) => {
   const task = ctx.getStore()
   if (task) task.logs.push(format(...args))
   else originalLog(...args)
 }
 
-export function createRunner (proc = process) {
-  const rootTask = createTest('QUECTO_ROOT_NODE')
-  let rootPromise = null
-
-  function scheduleRoot () {
-    if (!rootPromise) {
-      rootPromise = new Promise(resolve => {
-        setImmediate(() => {
-          const matrixCtx = { run: (store, cb) => ctx.run(store, cb) }
-          run(rootTask, matrixCtx).then(result => {
-            report(result, '', proc)
-            if (proc.env.QUECTO_TEST_EXIT_CODE) proc.exitCode = 1
-            resolve(result)
-          })
-        })
-      })
-    }
-    return rootPromise
-  }
-
-  function createInterface (isSuite) {
-    const api = (...args) => {
-      const test = createTest(...args)
-      const parent = ctx.getStore() || rootTask
-
-      test.isSuite = isSuite // <-- Injects the DNA
-      test.parent = parent
-
-      parent.children.push(test)
-
-      return parent === rootTask ? scheduleRoot() : Promise.resolve()
-    }
-
-    api.skip = (name, opts, fn) => api(name, resolveOptions(opts, { skip: true }), fn || opts)
-    api.only = (name, opts, fn) => api(name, resolveOptions(opts, { only: true }), fn || opts)
-    return api
-  }
-
-  return {
-    test: createInterface(false),
-    describe: createInterface(true),
-    it: createInterface(false),
-    // 2. Push directly into the isolated hooks storage!
-    before: (fn) => (ctx.getStore() || rootTask).hooks.before.push(fn),
-    after: (fn) => (ctx.getStore() || rootTask).hooks.after.push(fn),
-    beforeEach: (fn) => (ctx.getStore() || rootTask).hooks.beforeEach.push(fn),
-    afterEach: (fn) => (ctx.getStore() || rootTask).hooks.afterEach.push(fn)
-  }
+export async function executeTree (root = rootNode, proc = process) {
+  const matrixCtx = { run: (store, cb) => ctx.run(store, cb) }
+  return run(root, matrixCtx).then(result => {
+    report(result, '', proc)
+    if (proc.env.QUECTO_TEST_EXIT_CODE) proc.exitCode = 1
+    return result
+  })
 }
 
-const defaultRunner = createRunner()
+// PURE AST MOUNTER
+function addNode (node) {
+  const parent = ctx.getStore() || rootNode // when does || rootNode trigger?
+  node.parent = parent
+  parent.children.push(node)
+  return node // Pure, synchronous data. No hidden promises.
+}
 
-export const test = defaultRunner.test
-export const describe = defaultRunner.describe
-export const it = defaultRunner.it
-export const before = defaultRunner.before
-export const after = defaultRunner.after
-export const beforeEach = defaultRunner.beforeEach
-export const afterEach = defaultRunner.afterEach
+export const test = (n, o, f) => addNode(new TestNode(n, o, f)) // should this use resolveOptions?
+export const describe = (n, o, f) => addNode(new Node(n, o, f)) // should this use resolveOptions?
+export const it = test
+
+test.skip = (n, o, f) => addNode(new TestNode(n, resolveOptions(o, { skip: true }), f || o))
+test.only = (n, o, f) => addNode(new TestNode(n, resolveOptions(o, { only: true }), f || o))
+describe.skip = (n, o, f) => addNode(new Node(n, resolveOptions(o, { skip: true }), f || o))
+describe.only = (n, o, f) => addNode(new Node(n, resolveOptions(o, { only: true }), f || o))
+
+export const before = (fn) => (ctx.getStore() || rootNode).hooks.before.push(fn)
+export const after = (fn) => (ctx.getStore() || rootNode).hooks.after.push(fn)
+export const beforeEach = (fn) => (ctx.getStore() || rootNode).hooks.beforeEach.push(fn)
+export const afterEach = (fn) => (ctx.getStore() || rootNode).hooks.afterEach.push(fn)
+
 export const mock = createMock()
 
-/*
-  [TODO]
-  - to conform with node:test api eventually we need to export a .run function that currently matches our runFile from q-test cli
-*/
+setImmediate(() => {
+  if (rootNode.children.length > 0) executeTree(rootNode)
+})

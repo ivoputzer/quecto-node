@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import { deepStrictEqual, strictEqual, ok } from 'node:assert'
-import { evaluate, createTest, resolveOptions, run, report } from '../../src/test.js'
+import { evaluate, TestNode, resolveOptions, run, report } from '../../src/test.js'
+
+const createTest = (...args) => new TestNode(...args)
 
 // Simple mock context since our engine relies on DI for Context Tracking internally
 const mockCtx = { run: async (store, callback) => await callback() }

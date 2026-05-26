@@ -1,7 +1,12 @@
-import { describe as suite, it as nodeTest } from 'node:test'
-import { strictEqual, deepStrictEqual, ok } from 'node:assert'
+/*
+  THE PURPOSE OF THIS FILE IS TO MAKE SURE THAT WE RESPECT THE NODE:TEST API
+*/
 
-import { createRunner, ctx } from '../index.js'
+import { describe as suite, it as nodeTest } from 'node:test'
+import { ok, strictEqual, deepStrictEqual } from 'node:assert/strict'
+
+import { ctx, executeTree, test, describe, it, before, after, beforeEach, afterEach } from '../index.js'
+import { Node } from '../src/test.js'
 
 const silentRun = async (fn) => {
   const fakeProc = {
@@ -11,50 +16,53 @@ const silentRun = async (fn) => {
     exitCode: 0
   }
 
-  const runner = createRunner(fakeProc)
+  const isolatedRoot = new Node('ISOLATED_ROOT')
 
-  // Nullifying the context severs the connection to the outer test runner
-  return await ctx.run(null, () => fn(runner))
+  await ctx.run(isolatedRoot, async () => {
+    await fn({ test, describe, it, before, after, beforeEach, afterEach })
+  })
+
+  return await executeTree(isolatedRoot, fakeProc)
 }
 
 suite('@quecto/test » Public API Integration', () => {
   nodeTest('Constructs and executes root AST node natively', async () => {
-    await silentRun(async ({ test }) => {
-      const result = await test('Root', () => { ok(true) })
-      strictEqual(result.name, 'QUECTO_ROOT_NODE')
-      strictEqual(result.children[0].name, 'Root')
-      strictEqual(result.children[0].error, undefined)
+    const root = await silentRun(async ({ test }) => {
+      const { name, error } = await test('Root', () => { ok(true) })
+
+      strictEqual(name, 'Root')
+      strictEqual(error, undefined)
     })
+
+    strictEqual(root.name, 'ISOLATED_ROOT')
   })
 
   nodeTest('Nests children invisibly via AsyncLocalStorage context', async () => {
-    await silentRun(async ({ test }) => {
-      const result = await test('Parent', async () => {
+    const { children: [parent] } = await silentRun(async ({ test }) => {
+      await test('Parent', async () => {
         await test('Child 1', () => ok(true))
         await test('Child 2', () => ok(true))
       })
-      const parent = result.children[0]
-      strictEqual(parent.name, 'Parent')
-      strictEqual(parent.children.length, 2)
-      strictEqual(parent.children[0].name, 'Child 1')
-      strictEqual(parent.children[1].name, 'Child 2')
     })
+    strictEqual(parent.name, 'Parent')
+    strictEqual(parent.children.length, 2)
+    strictEqual(parent.children[0].name, 'Child 1')
+    strictEqual(parent.children[1].name, 'Child 2')
   })
 
   nodeTest('Intercepts console logs and attaches them to the active node', async () => {
-    await silentRun(async ({ test }) => {
-      const result = await test('Logger', () => {
+    const root = await silentRun(async ({ test }) => {
+      await test('Logger', () => {
         console.log('Line 1')
         console.log('Line 2')
       })
-      deepStrictEqual(result.children[0].logs, ['Line 1', 'Line 2'])
     })
+    deepStrictEqual(root.children[0].logs, ['Line 1', 'Line 2'])
   })
 
   nodeTest('Propagates nested beforeEach and afterEach cleanly through BDD execution map', async () => {
+    const runOrder = []
     await silentRun(async ({ describe, it, before, after, beforeEach, afterEach }) => {
-      const runOrder = []
-
       await describe('BDD Mapper', () => {
         after(() => runOrder.push('suite_after'))
         before(() => runOrder.push('suite_before'))
@@ -64,18 +72,17 @@ suite('@quecto/test » Public API Integration', () => {
         it('Leaf 1', () => runOrder.push('test_1'))
         it('Leaf 2', () => runOrder.push('test_2'))
       })
-
-      deepStrictEqual(runOrder, [
-        'suite_before',
-        'each_before',
-        'test_1',
-        'each_after',
-        'each_before',
-        'test_2',
-        'each_after',
-        'suite_after'
-      ])
     })
+    deepStrictEqual(runOrder, [
+      'suite_before',
+      'each_before',
+      'test_1',
+      'each_after',
+      'each_before',
+      'test_2',
+      'each_after',
+      'suite_after'
+    ])
   })
 
   nodeTest('Tape style t.test() hook inheritance', async () => {
@@ -90,7 +97,6 @@ suite('@quecto/test » Public API Integration', () => {
         })
       })
     })
-
     deepStrictEqual(runOrder, ['before_each', 'leaf', 'before_each', 'child'])
   })
 
