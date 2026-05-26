@@ -3,29 +3,11 @@
 import cp from 'node:child_process'
 import os from 'node:os'
 import fs from 'node:fs'
-import path from 'node:path'
 import { styleText, parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
+import { findFiles } from '../lib/fs.js'
 
 const registerPath = fileURLToPath(new URL('../register.js', import.meta.url))
-
-export function * findFiles (bases, match, ignore, { statSync, readdirSync } = fs, { join } = path) {
-  for (const base of [].concat(bases)) {
-    if (ignore?.test(base)) continue
-    if (statSync(base).isFile()) {
-      yield base
-      continue
-    }
-    for (const entry of readdirSync(base, { withFileTypes: true })) {
-      const fullPath = join(base, entry.name)
-      if (entry.isDirectory()) {
-        yield * findFiles(fullPath, match, ignore, { statSync, readdirSync }, { join })
-      } else if (match?.test(fullPath) ?? true) {
-        yield fullPath
-      }
-    }
-  }
-}
 
 export const runFile = async (target, { register } = {}, { spawn } = cp, { execPath, execArgv } = process) => {
   const registerArgs = register ? ['--import', registerPath] : []

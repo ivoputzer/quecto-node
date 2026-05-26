@@ -32,8 +32,8 @@ function addNode (node) {
   return node
 }
 
-export const test = (n, o, f) => addNode(new TestNode(n, o, f)) // should this use resolveOptions?
-export const describe = (n, o, f) => addNode(new Node(n, o, f)) // should this use resolveOptions?
+export const test = (n, o, f) => addNode(new TestNode(n, o, f))
+export const describe = (n, o, f) => addNode(new Node(n, o, f))
 export const it = test
 
 test.skip = (n, o, f) => addNode(new TestNode(n, resolveOptions(o, { skip: true }), f ?? o))

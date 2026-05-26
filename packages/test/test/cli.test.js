@@ -2,7 +2,7 @@
 import { describe, it } from 'node:test'
 import { deepStrictEqual, strictEqual, rejects, ok } from 'node:assert'
 import { fileURLToPath } from 'node:url'
-import { mapOptions, runFile, runSuite, findFiles } from '../bin/q-test.js'
+import { mapOptions, runFile, runSuite } from '../bin/q-test.js'
 
 describe('test/cli', () => {
   const expectedRegisterPath = fileURLToPath(new URL('../register.js', import.meta.url))
@@ -116,38 +116,6 @@ describe('test/cli', () => {
 
       await runSuite(options, mockDi)
       strictEqual(filesRun, 2, 'Engine exhausted file iterator')
-    })
-  })
-
-  describe('.findFiles(bases, match, ignore)', () => {
-    const mockPath = { join: (a, b) => `${a}/${b}` }
-
-    it('recursively traverses directories yielding matching files', () => {
-      const mockFs = {
-        statSync: () => ({ isFile: () => false }),
-        readdirSync: (base) => {
-          if (base === 'project') return [{ name: 'a.test.js', isDirectory: () => false }]
-          return []
-        }
-      }
-      deepStrictEqual([
-        ...findFiles(['project'], /\.test\.js$/, null, mockFs, mockPath)
-      ], ['project/a.test.js'])
-    })
-
-    it('bypasses ignored directories', () => {
-      let readdirCalled = false
-      const mockFs = {
-        statSync: () => ({ isFile: () => false }),
-        readdirSync: () => {
-          readdirCalled = true
-          return []
-        }
-      }
-      deepStrictEqual([
-        ...findFiles(['node_modules'], null, /node_modules/, mockFs, {})
-      ], [])
-      strictEqual(readdirCalled, false, 'Should have stopped before reading directory')
     })
   })
 })

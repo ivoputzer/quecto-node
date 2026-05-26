@@ -38,7 +38,7 @@ export async function run (task, env) {
   const context = new Context(task, ac?.signal)
 
   try {
-    if (task.opts.skip) throw new Error(kSkip)
+    if (task.opts.skip) throw new Error(kSkip.description) // should this task be returned already 🤔
 
     // Inherited Setup (Suites return [], Tests return hooks)
     for (const hook of task.beforeEach) await evaluate(hook, context, task.opts.timeout, ac)
@@ -78,7 +78,7 @@ export async function run (task, env) {
     // Inherited Teardown
     for (const hook of task.afterEach) await evaluate(hook, context, task.opts.timeout, ac)
   } catch (error) {
-    if (error.message === kSkip) task.skipped = true
+    if (error.message === kSkip.description) task.skipped = true
     else task.error = error
   }
 
@@ -119,8 +119,6 @@ export class Context {
 
   get mock () {
     return (this.#mock ??= createMock())
-    // if (!this.#mock) this.#mock = createMock()
-    // return this.#mock
   }
 
   test (n, o, f) {

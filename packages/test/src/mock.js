@@ -1,5 +1,31 @@
 /**
- * @file lib/mock.js
+ * @file src/mock.js
+ * Context holding the state and prototype methods for a specific spy.
+ * Keeps V8 Hidden Classes perfectly stable.
+ */
+class SpyContext {
+  constructor (implementation) {
+    this.calls = []
+    this.implementation = implementation
+  }
+
+  callCount () {
+    return this.calls.length
+  }
+
+  resetCalls () {
+    this.calls.length = 0
+  }
+
+  setImplementation (newImpl) {
+    this.implementation = newImpl
+  }
+
+  restore () {} // Hook for tracker to override without changing object shape
+}
+
+/**
+ * @file src/mock.js
  *
  * This module is a lightweight, drop-in replacement for the native Node.js `node:test` `mock` API.
  * It is fully compliant with core assertion patterns (calls tracking, arguments, results, errors, target contexts, and method restoration).
@@ -29,77 +55,58 @@
  * @param {Function} [original] - The original implementation to wrap.
  * @returns {Function} The spy function.
  */
+
 export const createSpy = (original = () => {}) => {
-  const calls = []
-  let implementation = original
+  const context = new SpyContext(original)
 
   const spy = function (...args) {
-    const call = {
-      arguments: args,
-      result: undefined,
-      error: undefined,
-      target: this
-    }
-    calls.push(call)
+    const call = { arguments: args, result: undefined, error: undefined, target: this }
+    context.calls.push(call)
 
     try {
-      return (call.result = implementation.apply(this, args))
+      return (call.result = context.implementation.apply(this, args))
     } catch (error) {
       call.error = error
       throw error
     }
   }
 
-  spy.mock = {
-    calls,
-    callCount () {
-      return calls.length
-    },
-    resetCalls () {
-      calls.length = 0
-    },
-    setImplementation (newImpl) {
-      implementation = newImpl
-    }
-  }
-
+  spy.mock = context
   return spy
 }
 
-/**
- * Factory that returns a mock context.
- * Useful for context-local mock tracking and automatic cleanup.
- */
-export const createMock = () => {
-  const activeSpies = []
+class MockTracker {
+  constructor () {
+    this.activeSpies = []
+  }
 
-  return {
-    fn: createSpy,
+  fn (original) {
+    return createSpy(original)
+  }
 
-    method (object, methodName, implementation) {
-      if (!object || typeof object[methodName] !== 'function') {
-        throw new Error(`Method "${methodName}" does not exist on target object`)
-      }
-
-      const original = object[methodName]
-      const spy = createSpy(implementation ?? original)
-
-      spy.mock.restore = () => {
-        object[methodName] = original
-      }
-
-      // Track this spy so we can restore it in restoreAll()
-      activeSpies.push(spy.mock)
-
-      object[methodName] = spy
-      return spy
-    },
-
-    restoreAll () {
-      for (const m of activeSpies) {
-        m.restore?.()
-      }
-      activeSpies.length = 0
+  method (object, methodName, implementation) {
+    if (!object || typeof object[methodName] !== 'function') {
+      throw new Error(`Method "${methodName}" does not exist on target object`)
     }
+
+    const original = object[methodName]
+    const spy = createSpy(implementation || original)
+
+    spy.mock.restore = () => { object[methodName] = original }
+
+    this.activeSpies.push(spy.mock)
+    object[methodName] = spy
+    return spy
+  }
+
+  restoreAll () {
+    // Single-pass, zero-allocation loop
+    for (let i = 0; i < this.activeSpies.length; i++) {
+      this.activeSpies[i].restore()
+    }
+    this.activeSpies.length = 0
   }
 }
+
+// Retain functional API compatibility for drop-in instantiation
+export const createMock = () => new MockTracker()
