@@ -27,115 +27,58 @@ export const evaluate = (fn, context, timeout, controller, { setTimeout, clearTi
   }
 })
 
-// export const createTest = (name, optsOrFn, maybeFn) => ({
-//   name,
-//   parent: null,
-//   isSuite: false, // The only flag we need!
-//   fn: typeof optsOrFn === 'function' ? optsOrFn : maybeFn,
-//   opts: typeof optsOrFn === 'object' ? optsOrFn : {},
-//   children: [],
-//   logs: [],
-//   hooks: {
-//     before: [],
-//     after: [],
-//     beforeEach: [],
-//     afterEach: []
-//   },
-//   get before () {
-//     return this.hooks.before
-//   },
-//   get after () {
-//     return this.hooks.after
-//   },
-//   get beforeEach () {
-//     if (this.isSuite) return [] // 💥 BOOM. I am a folder. I do not inherit.
-//     const inherited = []
-//     let ancestor = this.parent
-//     while (ancestor) {
-//       if (ancestor.hooks.beforeEach.length) inherited.unshift(...ancestor.hooks.beforeEach)
-//       ancestor = ancestor.parent
-//     }
-//     return inherited
-//   },
-//   get afterEach () {
-//     if (this.isSuite) return [] // 💥 BOOM. I am a folder.
-//     const inherited = []
-//     let ancestor = this.parent
-//     while (ancestor) {
-//       if (ancestor.hooks.afterEach.length) inherited.push(...ancestor.hooks.afterEach)
-//       ancestor = ancestor.parent
-//     }
-//     return inherited
-//   }
-// })
-
 export const resolveOptions = (optsOrFn, overrides) => typeof optsOrFn === 'function' ? overrides : { ...optsOrFn, ...overrides }
 
+const kSkip = Symbol('quecto:test:skip')
+
 // The pure, recursive, pull-based V8 micro-task
-export async function run (task, ctx) {
+export async function run (task, env) {
   const start = Date.now()
   const ac = new AbortController()
   const context = new Context(task, ac?.signal)
 
-  // const context = {
-  //   signal: ac?.signal,
-  //   get mock () {
-  //     if (!mock) {
-  //       mock = createMock()
-  //     }
-  //     return mock
-  //   },
-  //   test: (...args) => {
-  //     const child = new TestNode(...args)
-  //     child.parent = task
-  //     task.children.push(child)
-  //     return Promise.resolve()
-  //   },
-  //   skip: (...args) => {
-  //     const child = new TestNode(...args)
-  //     child.parent = task
-  //     child.opts.skip = true
-  //     task.children.push(child)
-  //     return Promise.resolve()
-  //   }
-  // }
-
   try {
-    if (task.opts.skip) throw new Error('ERR_SKIPPED')
+    if (task.opts.skip) throw new Error(kSkip)
 
-    // 1. Inherited Setup (Suites return [], Tests return hooks)
+    // Inherited Setup (Suites return [], Tests return hooks)
     for (const hook of task.beforeEach) await evaluate(hook, context, task.opts.timeout, ac)
 
-    // 2. Block Execution (Works identical for describes and tests!)
-    if (task.fn) await ctx.run(task, () => evaluate(task.fn, context, task.opts.timeout, ac))
+    // Block Execution (Works identical for describes and tests)
+    if (task.fn) await env.wrap(task, () => evaluate(task.fn, context, task.opts.timeout, ac))
 
-    // 3. Child Setup
+    // Child Setup
     for (const hook of task.before) await evaluate(hook, context, task.opts.timeout, ac)
 
-    // 4. Children Matrix
-    const exclusive = task.children.filter(c => c.opts.only)
-    if (exclusive.length) task.children.forEach(c => { if (!c.opts.only) c.skipped = true })
-    const runnable = task.children.filter(c => !c.skipped)
+    // Children (Single-pass optimization)
+    let hasOnly = false
+    for (let i = 0; i < task.children.length; i++) {
+      if (task.children[i].opts.only) hasOnly = true
+    }
+
+    const runnable = []
+    for (let i = 0; i < task.children.length; i++) {
+      const child = task.children[i]
+      if (hasOnly && !child.opts.only) child.skipped = true
+      if (!child.skipped) runnable.push(child)
+    }
 
     if (runnable.length > 0) {
-      const poolSize = task.opts.concurrency === true ? 8 : (task.opts.concurrency || 1)
-      const iterator = runnable.entries()
+      const length = task.opts.concurrency === true ? 8 : (task.opts.concurrency ?? 1)
+      const iterator = runnable.values()
       await Promise.all(
-        Array.from({ length: poolSize }, async () => {
-          for (let step = iterator.next(); !step.done; step = iterator.next()) {
-            await run(step.value[1], ctx)
-          }
+        Array.from({ length }, async () => {
+          for (const child of iterator) env?.notify?.(await run(child, env))
         })
       )
     }
 
-    // 5. Child Teardown
+    // Child Teardown
     for (const hook of task.after) await evaluate(hook, context, task.opts.timeout, ac)
 
-    // 6. Inherited Teardown
+    // Inherited Teardown
     for (const hook of task.afterEach) await evaluate(hook, context, task.opts.timeout, ac)
   } catch (error) {
-    if (error.message === 'ERR_SKIPPED') task.skipped = true
+    if (error.message === kSkip) task.skipped = true
     else task.error = error
   }
 
@@ -143,28 +86,28 @@ export async function run (task, ctx) {
   return task
 }
 
-// export function report (task, indent = '', { stdout, stderr, env } = process) {
-//   const pkgName = env.npm_package_name
-//   if (task.error) {
-//     env.QUECTO_TEST_EXIT_CODE = '1'
-//     const trace = (task.error.stack || task.error).toString().split('\n')
-//       .filter(line => !(pkgName && line.includes(pkgName)) && !line.includes('node:internal/'))
-//       .join(`\n${indent}    `)
-//     stderr.write(styleText('red', `${indent}✘ ${task.name} (${task.duration}ms)\n${indent}    ${trace}\n`))
-//   } else if (task.skipped) {
-//     stdout.write(styleText('gray', `${indent}- ${task.name} (skipped)\n`))
-//   } else {
-//     // Root Node is invisible. Only render its children.
-//     if (task.name !== 'QUECTO_ROOT_NODE') {
-//       const symbol = task.children.length ? '▶' : '✔'
-//       const color = task.children.length ? 'blue' : 'green'
-//       stdout.write(styleText(color, `${indent}${symbol} ${task.name} (${task.duration}ms)\n`))
-//       indent += '  '
-//     }
-//   }
-//   task.logs.forEach(log => stdout.write(styleText('gray', `${indent}| ${log.replace(/\n/g, `\n${indent}| `)}\n`)))
-//   task.children.forEach(child => report(child, indent, { stdout, stderr, env }))
-// }
+export function report (task, indent = '', { stdout, stderr, env } = process) {
+  const pkgName = env.npm_package_name
+  if (task.error) {
+    env.QUECTO_TEST_EXIT_CODE = '1'
+    const trace = (task.error.stack || task.error).toString().split('\n')
+      .filter(line => !(pkgName && line.includes(pkgName)) && !line.includes('node:internal/'))
+      .join(`\n${indent}    `)
+    stderr.write(styleText('red', `${indent}✘ ${task.name} (${task.duration}ms)\n${indent}    ${trace}\n`))
+  } else if (task.skipped) {
+    stdout.write(styleText('gray', `${indent}- ${task.name} (skipped)\n`))
+  } else {
+    // Root Node is invisible. Only render its children.
+    if (task.name !== 'QUECTO_ROOT_NODE') {
+      const symbol = task.children.length ? '▶' : '✔'
+      const color = task.children.length ? 'blue' : 'green'
+      stdout.write(styleText(color, `${indent}${symbol} ${task.name} (${task.duration}ms)\n`))
+      indent += '  '
+    }
+  }
+  task.logs.forEach(log => stdout.write(styleText('gray', `${indent}| ${log.replace(/\n/g, `\n${indent}| `)}\n`)))
+  task.children.forEach(child => report(child, indent, { stdout, stderr, env }))
+}
 
 export class Context {
   #mock = null
@@ -175,8 +118,9 @@ export class Context {
   }
 
   get mock () {
-    if (!this.#mock) this.#mock = createMock()
-    return this.#mock
+    return (this.#mock ??= createMock())
+    // if (!this.#mock) this.#mock = createMock()
+    // return this.#mock
   }
 
   test (n, o, f) {
@@ -242,47 +186,5 @@ export class TestNode extends Node {
       ancestor = ancestor.parent
     }
     return inherited
-  }
-}
-
-export function report (node, indent = '', proc = process, stats = { tests: 0, suites: 0, pass: 0, fail: 0, skip: 0 }) {
-  const { stdout, stderr, env } = proc
-  const isRoot = node.name === 'QUECTO_ROOT_NODE'
-
-  if (!isRoot) {
-    if (node instanceof TestNode) stats.tests++
-    else stats.suites++
-
-    if (node.error) {
-      stats.fail++
-      if (env) env.QUECTO_TEST_EXIT_CODE = '1'
-      const pkg = env?.npm_package_name
-      const trace = (node.error.stack || node.error).toString().split('\n')
-        .filter(line => !(pkg && line.includes(pkg)) && !line.includes('node:internal/'))
-        .join(`\n${indent}    `)
-      stderr.write(styleText('red', `${indent}✘ ${node.name} (${node.duration}ms)\n${indent}    ${trace}\n`))
-    } else if (node.skipped) {
-      stats.skip++
-      stdout.write(styleText('gray', `${indent}- ${node.name} (skipped)\n`))
-    } else {
-      stats.pass++
-      const symbol = node.children.length ? '▶' : '✔'
-      const color = node.children.length ? 'blue' : 'green'
-      stdout.write(styleText(color, `${indent}${symbol} ${node.name} (${node.duration}ms)\n`))
-    }
-    indent += '  '
-  }
-
-  node.logs.forEach(log => stdout.write(styleText('gray', `${indent}| ${log.replace(/\n/g, `\n${indent}| `)}\n`)))
-  node.children.forEach(child => report(child, indent, proc, stats))
-
-  // Print the summary exactly once, right at the bottom
-  if (isRoot) {
-    stdout.write(`
-${styleText('blue', 'ℹ')} tests ${stats.tests}
-${styleText('blue', 'ℹ')} suites ${stats.suites}
-${styleText('green', 'ℹ')} pass ${stats.pass}
-${styleText(stats.fail ? 'red' : 'gray', 'ℹ')} fail ${stats.fail}
-${styleText('gray', 'ℹ')} skip ${stats.skip}\n\n`)
   }
 }

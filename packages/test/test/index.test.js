@@ -5,7 +5,7 @@
 import { describe as suite, it as nodeTest } from 'node:test'
 import { ok, strictEqual, deepStrictEqual } from 'node:assert/strict'
 
-import { ctx, executeTree, test, describe, it, before, after, beforeEach, afterEach } from '../index.js'
+import { als, executeTree, test, describe, it, before, after, beforeEach, afterEach } from '../index.js'
 import { Node } from '../src/test.js'
 
 const silentRun = async (fn) => {
@@ -18,7 +18,7 @@ const silentRun = async (fn) => {
 
   const isolatedRoot = new Node('ISOLATED_ROOT')
 
-  await ctx.run(isolatedRoot, async () => {
+  await als.run(isolatedRoot, async () => {
     await fn({ test, describe, it, before, after, beforeEach, afterEach })
   })
 

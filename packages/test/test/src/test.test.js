@@ -5,7 +5,6 @@ import { evaluate, TestNode, resolveOptions, run, report } from '../../src/test.
 const createTest = (...args) => new TestNode(...args)
 
 // Simple mock context since our engine relies on DI for Context Tracking internally
-const mockCtx = { run: async (store, callback) => await callback() }
 
 describe('@quecto/test/lib/test', () => {
   describe('.createTest(name, opts, fn)', () => {
@@ -78,7 +77,9 @@ describe('@quecto/test/lib/test', () => {
     })
   })
 
-  describe('.run(task, ctx) - The Tree Execution Matrix', () => {
+  describe('.run(task, env) - The Tree Execution Matrix', () => {
+    const env = { wrap: (store, next) => next(), notify: Function.prototype }
+
     it('Executes suite lifecycles (Tree Builder -> Before -> Children -> After)', async () => {
       const timeline = []
       const parent = createTest('Suite') // builds tree
@@ -88,26 +89,26 @@ describe('@quecto/test/lib/test', () => {
       const child = createTest('Test', () => { timeline.push('run_test') })
       parent.children.push(child)
 
-      await run(parent, mockCtx)
+      await run(parent, env)
       deepStrictEqual(timeline, ['before', 'run_test', 'after'])
     })
 
     it('Traps unhandled execution errors into task.error', async () => {
       const task = createTest('Fail', () => { throw new Error('Crashed') })
-      await run(task, mockCtx)
+      await run(task, env)
       strictEqual(task.error.message, 'Crashed')
     })
 
     it('Calculates duration dynamically without relying on strict timer ticks', async () => {
       const task = createTest('Timer', async () => await new Promise(resolve => setTimeout(resolve, 10)))
-      await run(task, mockCtx)
+      await run(task, env)
       strictEqual(typeof task.duration, 'number')
       ok(task.duration > 0, 'Duration should be a positive integer')
     })
 
     it('Applies .skip modifier natively', async () => {
       const task = createTest('SkipMe', { skip: true }, () => { throw new Error('Should not run') })
-      await run(task, mockCtx)
+      await run(task, env)
       strictEqual(task.skipped, true)
       strictEqual(task.error, undefined)
     })
@@ -118,7 +119,7 @@ describe('@quecto/test/lib/test', () => {
       const c2 = createTest('C2', { only: true }, () => {})
       parent.children.push(c1, c2)
 
-      await run(parent, mockCtx)
+      await run(parent, env)
 
       strictEqual(c1.skipped, true, 'Sibling was not skipped')
       strictEqual(c2.skipped, undefined, '.only node should not be skipped')
