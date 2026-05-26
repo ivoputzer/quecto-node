@@ -82,7 +82,7 @@ export const createMock = () => {
       }
 
       const original = object[methodName]
-      const spy = createSpy(implementation || original)
+      const spy = createSpy(implementation ?? original)
 
       spy.mock.restore = () => {
         object[methodName] = original
