@@ -52,13 +52,12 @@ export async function runSuite (opts, di = {}) {
 
   stdout.write(styleText(['blue', 'bold'], `\n@quecto/test » Igniting ${opts.parallel} Cores\n\n`))
   try {
-    const iter = finder(opts.targets, opts.match, opts.ignore)
-    // Mathematically bounded worker pool to prevent empty allocation crashes
-    await Promise.all(Array.from({ length: Math.max(1, opts.parallel) }, async () => {
-      for (let step = iter.next(); !step.done; step = iter.next()) {
-        await engine(step.value, { register: opts.register })
-      }
-    }))
+    const iterator = finder(opts.targets, opts.match, opts.ignore)
+    await Promise.all(
+      Array.from({ length: Math.max(1, opts.parallel) }, async () => {
+        for (const file of iterator) await engine(file, { register: opts.register })
+      })
+    )
     stdout.write(styleText(['green', 'bold'], '\n✔ Test suite completely drained.\n\n'))
   } catch (failedFile) {
     setExitCode(1)
