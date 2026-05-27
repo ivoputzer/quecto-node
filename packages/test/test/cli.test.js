@@ -1,4 +1,3 @@
-// ==> test/cli.test.js <==
 import { describe, it } from 'node:test'
 import { deepStrictEqual, strictEqual, rejects, ok } from 'node:assert'
 import { fileURLToPath } from 'node:url'
@@ -116,6 +115,25 @@ describe('test/cli', () => {
 
       await runSuite(options, mockDi)
       strictEqual(filesRun, 2, 'Engine exhausted file iterator')
+    })
+
+    it('continues executing remaining files even if one file fails (no orphaned children)', async () => {
+      const options = { targets: ['virt'], parallel: 2, match: /.*/, register: false }
+      let filesRun = 0
+
+      const mockDi = {
+        stdout: { write: Function.prototype },
+        stderr: { write: Function.prototype },
+        exitCode: Function.prototype,
+        runFile: async (file) => {
+          filesRun++
+          if (file === 'a.js') throw new Error('Crashed')
+        },
+        findFiles: function * () { yield 'a.js'; yield 'b.js' }
+      }
+
+      await runSuite(options, mockDi)
+      strictEqual(filesRun, 2, 'Engine should have executed b.js even though a.js failed')
     })
   })
 })
