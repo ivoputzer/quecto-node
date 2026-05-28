@@ -1,4 +1,4 @@
-name: CD / Auto-Publish (Monorepo)
+name: Continuous Publish
 on:
   push:
     branches:
