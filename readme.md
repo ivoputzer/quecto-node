@@ -3,7 +3,7 @@
 
 [![issues](https://img.shields.io/github/issues/ivoputzer/quecto-node?style=flat-square&logo=github&colorB=44CC11)](https://github.com/ivoputzer/quecto-node/issues)
 [![cd](https://img.shields.io/github/actions/workflow/status/ivoputzer/quecto-node/cd.yml?style=flat-square&colorB=44CC11)](https://github.com/ivoputzer/quecto-node/actions/workflows/cd.yml)
-[![packages](https://img.shields.io/badge/packages-2-blue.svg?style=flat-square&colorB=44CC11)](https://www.npmjs.com/org/quecto)
+[![packages](https://img.shields.io/badge/packages-2%20published-blue.svg?style=flat-square&colorB=44CC11)](https://www.npmjs.com/org/quecto)
 [![style](https://img.shields.io/badge/coding%20style-standard-brightgreen.svg?style=flat-square&colorB=44CC11)](http://standardjs.com)
 [![node](https://img.shields.io/badge/node-lts/*-red.svg?style=flat-square&colorB=007EC6)](https://nodejs.org)
 [![license](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivoputzer%2Fquecto-node%2Fmain%2Fpackage.json&query=%24.license&style=flat-square&label=license&color=007EC6)](https://spdx.org/licenses/WTFNMFPL)
