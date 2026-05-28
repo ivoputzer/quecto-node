@@ -15,6 +15,7 @@ jobs:
       workspaces: ${{ steps.matrix.outputs.workspaces }}
     steps:
       - uses: actions/checkout@v6
+      - run: npm install --no-audit --no-fund --no-package-lock --ignore-scripts --omit=optional
       - id: matrix
         run: echo "workspaces=$(npm query .workspace | jq -c '[.[].location]')" >> "$GITHUB_OUTPUT"
 
