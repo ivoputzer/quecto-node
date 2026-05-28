@@ -1,8 +1,4 @@
 # The Concurrency Pool Kata
-
-> *"How do you pass data between parallel threads without locking the memory?"*
-> — You don't. You make the threads pull the data themselves.
-
 Building a concurrency pool in JavaScript forces you to confront the realities of the event loop. Without OS-level threads, you must multiplex the V8 Promise microtask queue. If you do it wrong, you create massive memory leaks, detached floating promises, and event loop congestion.
 
 This Kata challenges you to build a stateless, concurrent execution throttle using Native Generators.
