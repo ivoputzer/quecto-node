@@ -1,4 +1,3 @@
-// ==> lib/reporters.js <==
 import { styleText } from 'node:util'
 
 /**
