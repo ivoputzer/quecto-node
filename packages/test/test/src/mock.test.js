@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import { strictEqual, throws, ok } from 'node:assert'
 import { createMock, createSpy } from '../../src/mock.js' // Adjust path accordingly
 
-describe('lib/mock', () => {
+describe('src/mock', () => {
   describe('createSpy()', () => {
     it('captures arguments and successful return values', () => {
       const spy = createSpy((a, b) => a + b)
