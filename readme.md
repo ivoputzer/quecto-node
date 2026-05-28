@@ -2,8 +2,21 @@
 The `@quecto` namespace is a collection of minimalist, zero-dependency utilities designed for Node.js and modern ECMAScript runtimes. Named after the SI prefix for $10^{-30}$ (representing the subatomic scale), this ecosystem focuses on highly constrained, single-purpose tools that leverage native platform APIs to keep dependency trees flat.
 
 Rather than adding heavy abstraction layers to your stack, these utilities are designed to be easily read, understood, and integrated with minimal overhead.
+
+
 <!--
+![build](https://img.shields.io/badge/build-passing-color.svg?style=flat-square&colorB=44CC11)
+![style](https://img.shields.io/badge/style-standard-color.svg?style=flat-square&colorB=44CC11)
+![packages](https://img.shields.io/badge/packages-0-blue.svg?style=flat-square&colorB=44CC11)
+
+[![dependencies](https://img.shields.io/badge/node-none-blue.svg?style=flat-square&colorB=44CC11)](https://github.com/ivoputzer/testbump/blob/main/package.json)
+[![style](https://img.shields.io/badge/coding%20style-standard-brightgreen.svg?style=flat-square&colorB=44CC11)](http://standardjs.com)
+[![node](https://img.shields.io/node/v/testbump?style=flat-square&colorB=007EC6)](https://nodejs.org/docs/v22.16.0/api)
+
+[![license](https://img.shields.io/npm/l/testbump.svg?style=flat-square&colorB=007EC6)](https://spdx.org/licenses/WTFNMFPL)
 ![Packages](https://img.shields.io/badge/dynamic/json?label=Package%20Count&query=$.total&url=https://raw.githubusercontent.com/ivoputzer/quecto-node/main/package.json)
+
+
 ![Version](https://img.shields.io/github/package-json/v/ivoputzer/quecto-node?filename=packages%2Fmy-lib%2Fpackage.json)
 [![cd](https://img.shields.io/github/actions/workflow/status/ivoputzer/testbump/cd.yml?style=flat-square&colorB=44CC11)](https://github.com/ivoputzer/testbump/actions/workflows/cd.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-none-blue.svg?style=flat-square&colorB=44CC11)](https://github.com/ivoputzer/testbump/blob/main/package.json)
@@ -35,14 +48,17 @@ Durable means constructing properly out of high-quality components using skilled
 ## The Constraints
 Every package under the `@quecto` scope operates under absolute constraints:
 
+- **The 100-Line Kata:** A core engine must be robust enough to solve a complex problem, yet compact enough to hold entirely in a developer's working memory. One hundred lines is the cognitive boundary of mastery. If a mechanism cannot be elegantly expressed within this limit, the architecture is wrong. We refine and compress until only vital structural mechanics remain, ensuring that when you read the code, you don't just use it, you absorb and remember how it works.
+
 - **Zero-Dependency Directive:** A package must have exactly `0` upstream operational dependencies. Supply-chain security is treated as an absolute boundary. If you import a `@quecto` utility, you know exactly how many lines of code entered your codebase.
-- **The 100-Line Kata:** If a core utility or engine cannot be elegantly and readably implemented in under 100 lines of highly optimized code, the architecture is wrong. We refine, de-duplicate, and compress until only vital structural mechanics remain.
+
 - **Total Isolation:** Utilities must be completely isolated and closed-loop. No module-level global variables, no ambient configurations, and no process-wide event hooks that leak across multiple instances in the same process memory.
+
 - **Platform Harmony:** Work *with* the platform, never over it. The cleanest code is the code you didn't have to write because the engine handles it natively.
 
 #### We try to build jewels, not boulders.
 
-## The Kata Doctrine
+## The Kata
 Every `@quecto` package serves two purposes.
 
 First, it is a production-ready, zero-dependency utility that you can import and trust. Second, it is a **Kata** (a strictly constrained learning exercise designed to teach you the deepest mechanics of the JavaScript runtime). We believe that installing a package should not rob you of the opportunity to understand how it works. Therefore, alongside `readme.md`, every package in this ecosystem includes a `kata.md`.
