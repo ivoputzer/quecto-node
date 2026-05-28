@@ -1,8 +1,16 @@
-# `@quecto/*`
+`@quecto/*`
+---
+
+[![issues](https://img.shields.io/github/issues/ivoputzer/quecto-node?style=flat-square&logo=github&colorB=44CC11)](https://github.com/ivoputzer/quecto-node/issues)
+[![cd](https://img.shields.io/github/actions/workflow/status/ivoputzer/quecto-node/cd.yml?style=flat-square&colorB=44CC11)](https://github.com/ivoputzer/quecto-node/actions/workflows/cd.yml)
+[![packages](https://img.shields.io/badge/packages-2-blue.svg?style=flat-square&colorB=44CC11)](https://www.npmjs.com/org/quecto)
+[![style](https://img.shields.io/badge/coding%20style-standard-brightgreen.svg?style=flat-square&colorB=44CC11)](http://standardjs.com)
+[![node](https://img.shields.io/badge/node-lts/*-red.svg?style=flat-square&colorB=007EC6)](https://nodejs.org)
+[![license](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivoputzer%2Fquecto-node%2Fmain%2Fpackage.json&query=%24.license&style=flat-square&label=license&color=007EC6)](https://spdx.org/licenses/WTFNMFPL)
+
 The `@quecto` namespace is a collection of minimalist, zero-dependency utilities designed for Node.js and modern ECMAScript runtimes. Named after the SI prefix for $10^{-30}$ (representing the subatomic scale), this ecosystem focuses on highly constrained, single-purpose tools that leverage native platform APIs to keep dependency trees flat.
 
 Rather than adding heavy abstraction layers to your stack, these utilities are designed to be easily read, understood, and integrated with minimal overhead.
-
 
 <!--
 ![build](https://img.shields.io/badge/build-passing-color.svg?style=flat-square&colorB=44CC11)
@@ -14,7 +22,7 @@ Rather than adding heavy abstraction layers to your stack, these utilities are d
 [![node](https://img.shields.io/node/v/testbump?style=flat-square&colorB=007EC6)](https://nodejs.org/docs/v22.16.0/api)
 
 [![license](https://img.shields.io/npm/l/testbump.svg?style=flat-square&colorB=007EC6)](https://spdx.org/licenses/WTFNMFPL)
-![Packages](https://img.shields.io/badge/dynamic/json?label=Package%20Count&query=$.total&url=https://raw.githubusercontent.com/ivoputzer/quecto-node/main/package.json)
+
 
 
 ![Version](https://img.shields.io/github/package-json/v/ivoputzer/quecto-node?filename=packages%2Fmy-lib%2Fpackage.json)
@@ -73,8 +81,8 @@ If you have an idea for a primitive that fits our philosophy, we welcome proposa
 To propose a new package, please open an issue using the [Proposal Template](.github/ISSUE_TEMPLATE/package_proposal.md).
 
 ## Roadmap
-- [ ] [`@quecto/test`](packages/test/readme.md) — A concurrent test runner that can be used as a drop-in replacement for `node:test`. It leverages `AsyncLocalStorage` to cleanly isolate test suites, and logs.
-- [ ] [`@quecto/pool`](packages/pool/readme.md) — A Go-style concurrency throttle for iterables and streams. It uses direct microtask hand-offs via `Promise.withResolvers()` to bypass array-shift allocations, executing massive queues with virtually zero memory overhead.
+- [ ] [`@quecto/test`](packages/test) — A concurrent test runner that can be used as a drop-in replacement for `node:test`. It leverages `AsyncLocalStorage` to cleanly isolate test suites, and logs.
+- [ ] [`@quecto/pool`](packages/pool) — A Go-style concurrency throttle for iterables and streams. It uses direct microtask hand-offs via `Promise.withResolvers()` to bypass array-shift allocations, executing massive queues with virtually zero memory overhead.
 
 <!--
 - [ ] [`@quecto/bump`](packages/bump/readme.md) deterministic semver orchestrator that reads test suite signatures via discrete math to eliminate human error from releases.
