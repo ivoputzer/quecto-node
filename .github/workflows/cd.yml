@@ -31,9 +31,8 @@ jobs:
         with:
           node-version: lts/*
           registry-url: "https://registry.npmjs.org"
-          cache: "npm"
 
-      - run: npm install --no-audit --no-fund --no-package-lock --ignore-scripts
+      - run: npm install --no-audit --no-fund --no-package-lock --ignore-scripts --omit=optional
 
       - working-directory: ${{ matrix.workspace }}
         run: npm test
