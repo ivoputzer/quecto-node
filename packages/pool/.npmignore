@@ -1,3 +1,5 @@
 test/
-lcov.info
-kata.md
+*.info
+*.tgz
+*.md
+!readme.md
