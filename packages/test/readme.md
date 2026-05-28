@@ -67,12 +67,11 @@ export async function test (label, fn, length = 1) {
   if (fn?.constructor?.name.includes('GeneratorFunction')) {
     console.log(`▶ ${label}`)
     const iterator = fn()
-    return Promise.all(Array.from({ length }, async () => {
-      for (let tick = await iterator.next(); !tick.done; tick = await iterator.next()) {
-        const [subLabel, subFn] = tick.value
-        await test(`  ${subLabel}`, subFn, length)
-      }
-    }))
+    return Promise.all(
+      Array.from({ length }, async () => {
+        for await (const [subLabel, subFn] of iterator) await test(`  ${subLabel}`, subFn, length)
+      })
+    )
   }
   try {
     await fn()
