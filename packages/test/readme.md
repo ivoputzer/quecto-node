@@ -56,28 +56,30 @@ node --import @quecto/test/register test.js
 
 ---
 
-## The North Star (The 20-Line Kata)
+## The North Star
 
 Before `@quecto/test` became a `node:test` compatible runner, it was a philosophical exercise in pure runtime mechanics. Everything in our production AST builder is simply a wrapper around this original, platform-independent JavaScript implementation.
 
 This is the absolute structural mechanic of our concurrent test runner. It handles sync/async tests, sync/async suite generators, parallel load-balancing, and error capturing recursively in **~20 lines of code**.
 
 ```javascript
-export async function test (label, fn, length = 1) {
-  if (fn?.constructor?.name.includes('GeneratorFunction')) {
-    console.log(`▶ ${label}`)
+import { ok, fail, strictEqual } from 'node:assert'
+
+export async function test (label, fn, concurrency = 1, indent = '') {
+  if (fn?.constructor?.name.includes('Generator')) {
+    console.log(`${indent}▶ ${label}`)
     const iterator = fn()
     return Promise.all(
-      Array.from({ length }, async () => {
-        for await (const [subLabel, subFn] of iterator) await test(`  ${subLabel}`, subFn, length)
+      Array.from({ length: concurrency }, async () => {
+        for await (const [label, fn] of iterator) await test(label, fn, concurrency, `${indent}  `)
       })
     )
   }
   try {
     await fn()
-    console.log(`✔ ${label}`)
+    console.log(`${indent}✔ ${label}`)
   } catch (error) {
-    console.error(`✘ ${label}\n  ${(error?.stack || error).toString().replace(/\n/g, '\n  ')}`)
+    console.error(`${indent}✘ ${label}\n${indent}${error?.stack ?? error}`)
   }
 }
 
@@ -92,9 +94,12 @@ test('Engine Architecture', async function * () {
       ok(err.name === 'AssertionError')
     }
   }]
+  yield ['Handles failures', () => {
+    fail('boom.')
+  }]
   yield ['Supports nested test queues natively', function * () {
     yield ['Inner task 1', () => ok(1)]
     yield ['Inner task 2', () => ok(1)]
   }]
-}, 3 /* spawns 3 concurrent workers to digest the generator */)
+}, 3)
 ```
