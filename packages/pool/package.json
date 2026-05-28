@@ -1,7 +1,14 @@
 {
   "name": "@quecto/pool",
-  "version": "0.0.0",
+  "version": "0.0.0-draft.1",
+  "private": true,
   "type": "module",
+  "scripts": {
+    "test": "q-test"
+  },
+  "devDependencies": {
+    "@quecto/test": "*"
+  },
   "engines": {
     "node": ">=22.11.0"
   }

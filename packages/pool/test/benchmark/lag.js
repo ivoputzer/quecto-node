@@ -1,5 +1,5 @@
 import { monitorEventLoopDelay } from 'node:perf_hooks'
-import { pool } from '../index.js'
+import { pool } from '../../index.js'
 
 const ITERATIONS = Number(process.env.ITERATIONS) || 100_000
 const CONCURRENCY = Number(process.env.CONCURRENCY) || 50

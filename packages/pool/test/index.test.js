@@ -1,7 +1,6 @@
-// ==> test/lib/pool.test.js <==
-import { describe, it } from 'node:test'
+import { describe, it } from '@quecto/test'
 import { strictEqual, deepStrictEqual, rejects, ok } from 'node:assert'
-import { pool } from './index.js'
+import { pool } from '../index.js'
 
 const delay = (ms, value) => new Promise(resolve => setTimeout(() => resolve(value), ms))
 
@@ -13,8 +12,6 @@ describe('@quecto/test/lib/pool', () => {
     for await (const res of pool(items, 2, async (x) => x * 2)) {
       results.push(res)
     }
-
-    // Fixed: Numeric comparator to bypass string-sorting trap
     deepStrictEqual(results.sort((a, b) => a - b), [2, 4, 6, 8, 10])
   })
 
@@ -22,7 +19,6 @@ describe('@quecto/test/lib/pool', () => {
     const items = [10, 10, 10, 10]
     const start = Date.now()
 
-    // Fixed: ESLint satisfied by actively asserting on iterated values
     for await (const ms of pool(items, 2, (ms) => delay(ms, ms))) {
       strictEqual(ms, 10)
     }
@@ -63,14 +59,12 @@ describe('@quecto/test/lib/pool', () => {
     await rejects(run(), (err) => err.message === 'Crashed')
   })
 
-  // NEW SCENARIO 1: The Empty Iterator Boundary
   it('handles empty iterables instantly without hanging', async () => {
     let executed = 0
     for await (const _ of pool([], 5, () => executed++)) { /* noop */ }
     strictEqual(executed, 0)
   })
 
-  // NEW SCENARIO 2: Concurrency greater than iterator length
   it('drains safely when concurrency exceeds input length', async () => {
     const results = []
     for await (const res of pool([1, 2], 50, (x) => Promise.resolve(x))) {
@@ -93,11 +87,9 @@ describe('@quecto/test/lib/pool', () => {
       }
     }
 
-    // Give background leaks a moment to run
     await delay(20)
 
-    // With concurrency 2, while the consumer processes item 2, the workers eagerly
-    // grab items 3 and 4 from the queue due to V8 microtask ordering.
+    // With concurrency 2, while the consumer processes item 2, the workers eagerly grab items 3 and 4 from the queue due to V8 microtask ordering.
     // However, item 5 must be perfectly blocked by the `closed` state.
     strictEqual(executed, 4, 'Leak detected: task 5 was executed after consumer broke out')
   })
