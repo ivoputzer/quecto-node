@@ -1,0 +1,76 @@
+name: CD / Auto-Publish (Monorepo)
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - ".github/**"
+permissions:
+  id-token: write # Provenance signing
+
+jobs:
+  lookup:
+    runs-on: ubuntu-latest
+    outputs:
+      workspaces: ${{ steps.matrix.outputs.workspaces }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: matrix
+        run: echo "workspaces=$(npm query .workspace | jq -c '[.[].location]')" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: lookup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Don't stop publishing if another package fails
+      matrix:
+        workspace: ${{ fromJson(needs.lookup.outputs.workspaces) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          registry-url: "https://registry.npmjs.org"
+          cache: "npm"
+
+      - run: npm install --no-audit --no-fund --no-package-lock --ignore-scripts
+
+      - working-directory: ${{ matrix.workspace }}
+        run: npm test
+
+      - working-directory: ${{ matrix.workspace }}
+        id: gatekeeper
+        run: |
+          PKG_NAME=$(jq -r .name package.json)
+          PKG_VERSION=$(jq -r .version package.json)
+          PKG_PRIVATE=$(jq -r '.private // false' package.json)
+
+          if [ "$IS_PRIVATE" == "true" ]; then
+            echo "📦 Package $PKG_NAME is marked private. Skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Checking NPM for $PKG_NAME@$PKG_VERSION..."
+          EXISTS=$(npm view "${PKG_NAME}@${PKG_VERSION}" version 2>/dev/null || echo "")
+
+          if [ -n "$EXISTS" ]; then
+            echo "📦 Version $PKG_VERSION is already published. Skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 3. Resolve NPM Tag (e.g., 0.0.0-draft.0 -> draft)
+          if [[ "$PKG_VERSION" == *-* ]]; then
+            NPM_TAG=$(echo "$PKG_VERSION" | cut -d'-' -f2 | cut -d'.' -f1)
+          else
+            NPM_TAG="latest"
+          fi
+
+          echo "📦 Version $PKG_VERSION is new. Will publish with tag: $NPM_TAG"
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "tag=$NPM_TAG" >> $GITHUB_OUTPUT
+
+      - if: steps.gatekeeper.outputs.skip != 'true'
+        working-directory: ${{ matrix.workspace }}
+        run: npm publish --tag ${{ steps.gatekeeper.outputs.tag }} --provenance --access public
